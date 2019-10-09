@@ -12,11 +12,18 @@ use nom::{
 };
 
 #[derive(Debug)]
+enum Statement {
+	Block(Vec<Statement>),
+	Expr(Box<Expr>)
+}
+
+#[derive(Debug)]
 enum Expr {
 	Add(Box<Expr>, Box<Expr>),
 	Subtract(Box<Expr>, Box<Expr>),
 	Multiply(Box<Expr>, Box<Expr>),
 	Divide(Box<Expr>, Box<Expr>),
+	Modulus(Box<Expr>, Box<Expr>),
 	Equal(Box<Expr>, Box<Expr>),
 	NotEqual(Box<Expr>, Box<Expr>),
 	LessThan(Box<Expr>, Box<Expr>),
@@ -25,8 +32,18 @@ enum Expr {
 	GreaterThanEqual(Box<Expr>, Box<Expr>),
 	Negate(Box<Expr>),
 	Not(Box<Expr>),
+	And(Box<Expr>, Box<Expr>),
+	Or(Box<Expr>, Box<Expr>),
+	BitAnd(Box<Expr>, Box<Expr>),
+	BitOr(Box<Expr>, Box<Expr>),
+	BitXor(Box<Expr>, Box<Expr>),
+	BitShiftLeft(Box<Expr>, Box<Expr>),
+	BitShiftRight(Box<Expr>, Box<Expr>),
+	BitNot(Box<Expr>),
 	FunctionCall(String, Vec<Expr>),
 	Ternary(Box<Expr>, Box<Expr>, Box<Expr>),
+	MemberAccess(Box<Expr>, Box<Expr>),
+	ArrayAccess(Box<Expr>, Box<Expr>),
 	Literal(Literal)
 }
 
@@ -45,8 +62,17 @@ enum Operator {
 	Subtract,
 	Multiply,
 	Divide,
+	Modulus,
 	Negate,
 	Not,
+	And,
+	Or,
+	BitAnd,
+	BitOr,
+	BitXor,
+	BitShiftLeft,
+	BitShiftRight,
+	BitNot,
 	Equal,
 	NotEqual,
 	LessThan,
@@ -54,6 +80,9 @@ enum Operator {
 	GreaterThan,
 	GreaterThanEqual
 }
+
+// TODO: fix precedence
+// https://en.cppreference.com/w/c/language/operator_precedence
 
 fn parse_literal(input: &str) -> IResult<&str, Literal> {
 	// TODO: fix all of this. it doesn't greedily handle floats properly...
@@ -113,7 +142,7 @@ fn parse_function_call(input: &str) -> IResult<&str, Expr> {
 	let (i, func_name) = parse_identifier(input)?;
 
 	let (i, _) = multispace0(i)?;
-	let (i, arguments) = delimited(tag("("), opt(parse_function_call_arguments), preceded(multispace0, tag(")")))(i)?;
+	let (i, arguments) = delimited(char('('), opt(parse_function_call_arguments), preceded(multispace0, char(')')))(i)?;
 
 	let final_args = if let Some(args_inner) = arguments {
 		args_inner
@@ -124,19 +153,55 @@ fn parse_function_call(input: &str) -> IResult<&str, Expr> {
 	Ok((i, Expr::FunctionCall(func_name, final_args)))
 }
 
-fn parse_expression_unary(input: &str) -> IResult<&str, Expr> {
+fn parse_expression_lowest(input: &str) -> IResult<&str, Expr> {
 	let (i, _) = multispace0(input)?;
-	let (i, leading_op) = opt(alt((
-		value(Operator::Negate, tag("-")),
-		value(Operator::Not, tag("!"))
-		)))(i)?;
-
-	let (i, _) = multispace0(i)?;
 	let (i, term) = alt((
 		parse_function_call,
 		map(parse_literal, |l| Expr::Literal(l)),
-		delimited(tag("("), parse_expression, preceded(multispace0, tag(")")))
+		delimited(char('('), parse_expression, preceded(multispace0, char(')')))
 	))(i)?;
+
+	let (i, array_access) = opt(
+		delimited(preceded(multispace0, char('[')), parse_expression, preceded(multispace0, char(']')))
+	)(i)?;
+
+	if let Some(array) = array_access {
+		Ok((i, Expr::ArrayAccess(Box::new(term), Box::new(array))))
+	} else {
+		Ok((i, term))
+	}
+}
+
+fn parse_expression_member_access(input: &str) -> IResult<&str, Expr> {
+	let (i, _) = multispace0(input)?;
+	let (i, term) = parse_expression_lowest(i)?;
+
+	let (i, operator_chain) = many0(|input: &str| {
+		let (i, _) = multispace0(input)?;
+		let (i, _) = char('.')(i)?;
+
+		let (i, _) = multispace0(i)?;
+		let (i, inner) = parse_expression_lowest(i)?;
+
+		Ok((i, inner))
+	})(i)?;
+
+	let mut output_value = term;
+	for inner in operator_chain {
+		output_value = Expr::MemberAccess(Box::new(output_value), Box::new(inner));
+	}
+
+	Ok((i, output_value))
+}
+
+fn parse_expression_unary(input: &str) -> IResult<&str, Expr> {
+	let (i, _) = multispace0(input)?;
+	let (i, leading_op) = opt(alt((
+		value(Operator::Negate, char('-')),
+		value(Operator::Not, char('!'))
+		)))(i)?;
+
+	let (i, term) = parse_expression_member_access(i)?;
 
 	if let Some(op) = leading_op {
 		let op_expr = match op {
@@ -158,8 +223,9 @@ fn parse_expression_multiply(input: &str) -> IResult<&str, Expr> {
 	let (i, operator_chain) = many0(|input: &str| {
 		let (i, _) = multispace0(input)?;
 		let (i, op) = alt((
-			value(Operator::Multiply, tag("*")),
-			value(Operator::Divide, tag("/"))
+			value(Operator::Multiply, char('*')),
+			value(Operator::Divide, char('/')),
+			value(Operator::Modulus, char('%'))
 		))(i)?;
 
 		let (i, _) = multispace0(i)?;
@@ -173,6 +239,7 @@ fn parse_expression_multiply(input: &str) -> IResult<&str, Expr> {
 		output_value = match op {
 			Operator::Multiply => Expr::Multiply(Box::new(output_value), Box::new(inner)),
 			Operator::Divide => Expr::Divide(Box::new(output_value), Box::new(inner)),
+			Operator::Modulus => Expr::Modulus(Box::new(output_value), Box::new(inner)),
 			_ => panic!("unhandled operator in parse_expression_multiply")
 		};
 	}
@@ -187,8 +254,8 @@ fn parse_expression_add(input: &str) -> IResult<&str, Expr> {
 	let (i, operator_chain) = many0(|input: &str| {
 		let (i, _) = multispace0(input)?;
 		let (i, op) = alt((
-			value(Operator::Add, tag("+")),
-			value(Operator::Subtract, tag("-"))
+			value(Operator::Add, char('+')),
+			value(Operator::Subtract, char('-'))
 		))(i)?;
 
 		let (i, _) = multispace0(i)?;
@@ -209,19 +276,15 @@ fn parse_expression_add(input: &str) -> IResult<&str, Expr> {
 	Ok((i, output_value))
 }
 
-fn parse_expression_compare(input: &str) -> IResult<&str, Expr> {
+fn parse_expression_bitshift(input: &str) -> IResult<&str, Expr> {
 	let (i, _) = multispace0(input)?;
 	let (i, first_term) = parse_expression_add(i)?;
 
 	let (i, operator_chain) = many0(|input: &str| {
 		let (i, _) = multispace0(input)?;
 		let (i, op) = alt((
-			value(Operator::NotEqual, tag("!=")),
-			value(Operator::Equal, tag("==")),
-			value(Operator::LessThanEqual, tag("<=")),
-			value(Operator::LessThan, tag("<")),
-			value(Operator::GreaterThanEqual, tag(">=")),
-			value(Operator::GreaterThan, tag(">"))
+			value(Operator::BitShiftLeft, tag("<<")),
+			value(Operator::BitShiftRight, tag(">>"))
 		))(i)?;
 
 		let (i, _) = multispace0(i)?;
@@ -233,8 +296,37 @@ fn parse_expression_compare(input: &str) -> IResult<&str, Expr> {
 	let mut output_value = first_term;
 	for (op, inner) in operator_chain {
 		output_value = match op {
-			Operator::NotEqual => Expr::NotEqual(Box::new(output_value), Box::new(inner)),
-			Operator::Equal => Expr::Equal(Box::new(output_value), Box::new(inner)),
+			Operator::BitShiftLeft => Expr::BitShiftLeft(Box::new(output_value), Box::new(inner)),
+			Operator::BitShiftRight => Expr::BitShiftRight(Box::new(output_value), Box::new(inner)),
+			_ => panic!("unhandled operator in parse_expression_bitshift")
+		};
+	}
+
+	Ok((i, output_value))
+}
+
+fn parse_expression_compare(input: &str) -> IResult<&str, Expr> {
+	let (i, _) = multispace0(input)?;
+	let (i, first_term) = parse_expression_bitshift(i)?;
+
+	let (i, operator_chain) = many0(|input: &str| {
+		let (i, _) = multispace0(input)?;
+		let (i, op) = alt((
+			value(Operator::LessThanEqual, tag("<=")),
+			value(Operator::LessThan, char('<')),
+			value(Operator::GreaterThanEqual, tag(">=")),
+			value(Operator::GreaterThan, char('>')),
+		))(i)?;
+
+		let (i, _) = multispace0(i)?;
+		let (i, inner) = parse_expression_bitshift(i)?;
+
+		Ok((i, (op, inner)))
+	})(i)?;
+
+	let mut output_value = first_term;
+	for (op, inner) in operator_chain {
+		output_value = match op {
 			Operator::LessThanEqual => Expr::LessThanEqual(Box::new(output_value), Box::new(inner)),
 			Operator::LessThan => Expr::LessThan(Box::new(output_value), Box::new(inner)),
 			Operator::GreaterThanEqual => Expr::GreaterThanEqual(Box::new(output_value), Box::new(inner)),
@@ -246,18 +338,157 @@ fn parse_expression_compare(input: &str) -> IResult<&str, Expr> {
 	Ok((i, output_value))
 }
 
-fn parse_expression_ternary(input: &str) -> IResult<&str, Expr> {
+fn parse_expression_equality(input: &str) -> IResult<&str, Expr> {
 	let (i, _) = multispace0(input)?;
 	let (i, first_term) = parse_expression_compare(i)?;
+
+	let (i, operator_chain) = many0(|input: &str| {
+		let (i, _) = multispace0(input)?;
+		let (i, op) = alt((
+			value(Operator::NotEqual, tag("!=")),
+			value(Operator::Equal, tag("=="))
+		))(i)?;
+
+		let (i, _) = multispace0(i)?;
+		let (i, inner) = parse_expression_compare(i)?;
+
+		Ok((i, (op, inner)))
+	})(i)?;
+
+	let mut output_value = first_term;
+	for (op, inner) in operator_chain {
+		output_value = match op {
+			Operator::NotEqual => Expr::NotEqual(Box::new(output_value), Box::new(inner)),
+			Operator::Equal => Expr::Equal(Box::new(output_value), Box::new(inner)),
+			_ => panic!("unhandled operator in parse_expression_equality")
+		};
+	}
+
+	Ok((i, output_value))
+}
+
+fn parse_expression_bitwise_and(input: &str) -> IResult<&str, Expr> {
+	let (i, _) = multispace0(input)?;
+	let (i, first_term) = parse_expression_equality(i)?;
+
+	let (i, operator_chain) = many0(|input: &str| {
+		let (i, _) = multispace0(input)?;
+		let (i, _) = char('&')(i)?;
+
+		let (i, _) = multispace0(i)?;
+		let (i, inner) = parse_expression_equality(i)?;
+
+		Ok((i, inner))
+	})(i)?;
+
+	let mut output_value = first_term;
+	for inner in operator_chain {
+		output_value = Expr::BitAnd(Box::new(output_value), Box::new(inner));
+	}
+
+	Ok((i, output_value))
+}
+
+fn parse_expression_bitwise_xor(input: &str) -> IResult<&str, Expr> {
+	let (i, _) = multispace0(input)?;
+	let (i, first_term) = parse_expression_bitwise_and(i)?;
+
+	let (i, operator_chain) = many0(|input: &str| {
+		let (i, _) = multispace0(input)?;
+		let (i, _) = char('^')(i)?;
+
+		let (i, _) = multispace0(i)?;
+		let (i, inner) = parse_expression_bitwise_and(i)?;
+
+		Ok((i, inner))
+	})(i)?;
+
+	let mut output_value = first_term;
+	for inner in operator_chain {
+		output_value = Expr::BitXor(Box::new(output_value), Box::new(inner));
+	}
+
+	Ok((i, output_value))
+}
+
+fn parse_expression_bitwise_or(input: &str) -> IResult<&str, Expr> {
+	let (i, _) = multispace0(input)?;
+	let (i, first_term) = parse_expression_bitwise_xor(i)?;
+
+	let (i, operator_chain) = many0(|input: &str| {
+		let (i, _) = multispace0(input)?;
+		let (i, _) = char('|')(i)?;
+
+		let (i, _) = multispace0(i)?;
+		let (i, inner) = parse_expression_bitwise_xor(i)?;
+
+		Ok((i, inner))
+	})(i)?;
+
+	let mut output_value = first_term;
+	for inner in operator_chain {
+		output_value = Expr::BitOr(Box::new(output_value), Box::new(inner));
+	}
+
+	Ok((i, output_value))
+}
+
+fn parse_expression_logical_and(input: &str) -> IResult<&str, Expr> {
+	let (i, _) = multispace0(input)?;
+	let (i, first_term) = parse_expression_bitwise_or(i)?;
+
+	let (i, operator_chain) = many0(|input: &str| {
+		let (i, _) = multispace0(input)?;
+		let (i, _) = tag("&&")(i)?;
+
+		let (i, _) = multispace0(i)?;
+		let (i, inner) = parse_expression_bitwise_or(i)?;
+
+		Ok((i, inner))
+	})(i)?;
+
+	let mut output_value = first_term;
+	for inner in operator_chain {
+		output_value = Expr::And(Box::new(output_value), Box::new(inner));
+	}
+
+	Ok((i, output_value))
+}
+
+fn parse_expression_logical_or(input: &str) -> IResult<&str, Expr> {
+	let (i, _) = multispace0(input)?;
+	let (i, first_term) = parse_expression_logical_and(i)?;
+
+	let (i, operator_chain) = many0(|input: &str| {
+		let (i, _) = multispace0(input)?;
+		let (i, _) = tag("||")(i)?;
+
+		let (i, _) = multispace0(i)?;
+		let (i, inner) = parse_expression_logical_and(i)?;
+
+		Ok((i, inner))
+	})(i)?;
+
+	let mut output_value = first_term;
+	for inner in operator_chain {
+		output_value = Expr::Or(Box::new(output_value), Box::new(inner));
+	}
+
+	Ok((i, output_value))
+}
+
+fn parse_expression_ternary(input: &str) -> IResult<&str, Expr> {
+	let (i, _) = multispace0(input)?;
+	let (i, first_term) = parse_expression_logical_or(i)?;
 
 	let (i, ternary_terms) = opt(|input: &str| {
 		let (i, _) = multispace0(input)?;
 		let (i, _) = char('?')(i)?;
-		let (i, if_term) = parse_expression_compare(i)?;
+		let (i, if_term) = parse_expression_logical_or(i)?;
 
 		let (i, _) = multispace0(i)?;
 		let (i, _) = char(':')(i)?;
-		let (i, else_term) = parse_expression_compare(i)?;
+		let (i, else_term) = parse_expression_logical_or(i)?;
 
 		Ok((i, (if_term, else_term)))
 	})(i)?;
@@ -275,5 +506,119 @@ fn parse_expression(input: &str) -> IResult<&str, Expr> {
 
 fn main() {
 	//println!("parsed {:?}", parse_expression("  myFun((- a  ), 5) * ( ! 5 / 6)*( 4 + 3 )  "));
-	println!("parsed {:?}", parse_expression("  myFun(a > b ? 4 + x : 5)"));
+	//println!("parsed {:?}", parse_expression("  myFun(a > b ? 4 + x : 5)"));
+
+	//println!("parsed {:?}", parse_expression("  myFun(a.y.z > b.x ? 4 + x : 5).a"));
+	println!("parsed {:?}", parse_expression(" b[5 + 4].z >> 5 | 4"));
+
+	/*if let Ok((i,e)) = parse_expression(" myFun((- a  ), 5) * ( ! 5 / 6)*( 4 + 3 ) ") {
+		pretty_print_expr(&e);
+		println!("");
+	}*/
 }
+
+
+
+// TODO: precendence rules so we know where to put parens
+/*fn pretty_print_expr(e: &Expr) {
+	match e {
+		Expr::Add(lhs, rhs) => {
+			pretty_print_expr(lhs);
+			print!("+");
+			pretty_print_expr(rhs);
+		},
+		Expr::Subtract(lhs, rhs) => {
+			pretty_print_expr(lhs);
+			print!("-");
+			pretty_print_expr(rhs);
+		},
+		Expr::Multiply(lhs, rhs) => {
+			pretty_print_expr(lhs);
+			print!("*");
+			pretty_print_expr(rhs);
+		},
+		Expr::Divide(lhs, rhs) => {
+			pretty_print_expr(lhs);
+			print!("/");
+			pretty_print_expr(rhs);
+		},
+		Expr::Equal(lhs, rhs) => {
+			pretty_print_expr(lhs);
+			print!("==");
+			pretty_print_expr(rhs);
+		},
+		Expr::NotEqual(lhs, rhs) => {
+			pretty_print_expr(lhs);
+			print!("!=");
+			pretty_print_expr(rhs);
+		},
+		Expr::LessThan(lhs, rhs) => {
+			pretty_print_expr(lhs);
+			print!("<");
+			pretty_print_expr(rhs);
+		},
+		Expr::LessThanEqual(lhs, rhs) => {
+			pretty_print_expr(lhs);
+			print!("<=");
+			pretty_print_expr(rhs);
+		},
+		Expr::GreaterThan(lhs, rhs) => {
+			pretty_print_expr(lhs);
+			print!(">");
+			pretty_print_expr(rhs);
+		},
+		Expr::GreaterThanEqual(lhs, rhs) => {
+			pretty_print_expr(lhs);
+			print!(">=");
+			pretty_print_expr(rhs);
+		},
+		Expr::Negate(arg) => {
+			print!("-");
+			pretty_print_expr(arg);
+		},
+		Expr::Not(arg) => {
+			print!("!");
+			pretty_print_expr(arg);
+		},
+		Expr::FunctionCall(name, arguments) => {
+			print!("{}(", name);
+			let mut arg_iter = arguments.iter();
+			if let Some(arg) = arg_iter.next() {
+				pretty_print_expr(arg);
+				
+				for a in arg_iter {
+					print!(",");
+					pretty_print_expr(a);
+				}
+			}
+			print!(")");
+		},
+		Expr::Ternary(cond, if_exp, else_exp) => {
+			pretty_print_expr(cond);
+			print!("?");
+			pretty_print_expr(if_exp);
+			print!(":");
+			pretty_print_expr(else_exp);
+		},
+		Expr::MemberAccess(lhs, rhs) => {
+			pretty_print_expr(lhs);
+			print!(".");
+			pretty_print_expr(rhs);
+		},
+		Expr::ArrayAccess(lhs, rhs) => {
+			pretty_print_expr(lhs);
+			print!("[");
+			pretty_print_expr(rhs);
+			print!("]");
+		},
+		Expr::Literal(l) => {
+			match l {
+				Literal::Float(f) => print!("{}", f),
+				Literal::Identifier(i) => print!("{}", i),
+				Literal::Int(i) => print!("{}", i),
+				Literal::UInt(u) => print!("{}", u)
+			}
+		}
+	}
+}
+*/
