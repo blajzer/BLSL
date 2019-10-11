@@ -11,34 +11,32 @@ use nom::{
 	sequence::{delimited, preceded}
 };
 
-// Internal type used during parsing
-#[derive(Clone)]
-enum Operator {
-	Add,
-	Subtract,
-	Multiply,
-	Divide,
-	Modulus,
-	Negate,
-	Not,
-	And,
-	Or,
-	BitAnd,
-	BitOr,
-	BitXor,
-	BitShiftLeft,
-	BitShiftRight,
-	BitNot,
-	Equal,
-	NotEqual,
-	LessThan,
-	LessThanEqual,
-	GreaterThan,
-	GreaterThanEqual
-}
-
-// TODO: fix precedence
+// Precedence rules based on C:
 // https://en.cppreference.com/w/c/language/operator_precedence
+
+fn parse_literal(input: &str) -> IResult<&str, Literal> {
+	// TODO: fix all of this. it doesn't greedily handle floats properly...
+	// i.e. it thinks everything is a float (-_-)
+	alt((
+		map(double, |f: f64| Literal::Float(f)),
+		map(digit1, |s: &str| {
+			if let Ok(i) = s.parse::<i64>() {
+				Literal::Int(i)
+			} else if let Ok(i) = s.parse::<u64>() {
+				Literal::UInt(i)
+			} else {
+				Literal::UInt(0) // This could be better...
+			}
+		}),
+		map(parse_identifier, |s: String| {
+			match s.as_str() {
+				"true" => Literal::Bool(true),
+				"false" => Literal::Bool(false),
+				_ => Literal::Identifier(s)
+			}
+		})
+	))(input)
+}
 
 fn parse_function_call_arguments(input: &str) -> IResult<&str, Vec<Expr>> {
 	let (i, _) = multispace0(input)?;
@@ -91,7 +89,7 @@ fn parse_expression_lowest(input: &str) -> IResult<&str, Expr> {
 	)(i)?;
 
 	if let Some(array) = array_access {
-		Ok((i, Expr::ArrayAccess(Box::new(term), Box::new(array))))
+		Ok((i, Expr::BinaryExpr(BinaryOperator::ArrayAccess, Box::new(term), Box::new(array))))
 	} else {
 		Ok((i, term))
 	}
@@ -113,7 +111,7 @@ fn parse_expression_member_access(input: &str) -> IResult<&str, Expr> {
 
 	let mut output_value = term;
 	for inner in operator_chain {
-		output_value = Expr::MemberAccess(Box::new(output_value), Box::new(inner));
+		output_value = Expr::BinaryExpr(BinaryOperator::MemberAccess, Box::new(output_value), Box::new(inner));
 	}
 
 	Ok((i, output_value))
@@ -122,22 +120,15 @@ fn parse_expression_member_access(input: &str) -> IResult<&str, Expr> {
 fn parse_expression_unary(input: &str) -> IResult<&str, Expr> {
 	let (i, _) = multispace0(input)?;
 	let (i, leading_op) = opt(alt((
-		value(Operator::Negate, char('-')),
-		value(Operator::Not, char('!')),
-		value(Operator::Not, char('~'))
+		value(UnaryOperator::Negate, char('-')),
+		value(UnaryOperator::Not, char('!')),
+		value(UnaryOperator::BitNot, char('~'))
 		)))(i)?;
 
 	let (i, term) = parse_expression_member_access(i)?;
 
 	if let Some(op) = leading_op {
-		let op_expr = match op {
-			Operator::Negate => Expr::Negate(Box::new(term)),
-			Operator::Not => Expr::Not(Box::new(term)),
-			Operator::BitNot => Expr::BitNot(Box::new(term)),
-			_ => panic!("unhandled operator in parse_expression_unary")
-		};
-
-		Ok((i, op_expr))
+		Ok((i, Expr::UnaryExpr(op, Box::new(term))))
 	} else {
 		Ok((i, term))
 	}
@@ -150,9 +141,9 @@ fn parse_expression_multiply(input: &str) -> IResult<&str, Expr> {
 	let (i, operator_chain) = many0(|input: &str| {
 		let (i, _) = multispace0(input)?;
 		let (i, op) = alt((
-			value(Operator::Multiply, char('*')),
-			value(Operator::Divide, char('/')),
-			value(Operator::Modulus, char('%'))
+			value(BinaryOperator::Multiply, char('*')),
+			value(BinaryOperator::Divide, char('/')),
+			value(BinaryOperator::Modulus, char('%'))
 		))(i)?;
 
 		let (i, _) = multispace0(i)?;
@@ -163,12 +154,7 @@ fn parse_expression_multiply(input: &str) -> IResult<&str, Expr> {
 
 	let mut output_value = first_term;
 	for (op, inner) in operator_chain {
-		output_value = match op {
-			Operator::Multiply => Expr::Multiply(Box::new(output_value), Box::new(inner)),
-			Operator::Divide => Expr::Divide(Box::new(output_value), Box::new(inner)),
-			Operator::Modulus => Expr::Modulus(Box::new(output_value), Box::new(inner)),
-			_ => panic!("unhandled operator in parse_expression_multiply")
-		};
+		output_value =  Expr::BinaryExpr(op, Box::new(output_value), Box::new(inner));
 	}
 
 	Ok((i, output_value))
@@ -181,8 +167,8 @@ fn parse_expression_add(input: &str) -> IResult<&str, Expr> {
 	let (i, operator_chain) = many0(|input: &str| {
 		let (i, _) = multispace0(input)?;
 		let (i, op) = alt((
-			value(Operator::Add, char('+')),
-			value(Operator::Subtract, char('-'))
+			value(BinaryOperator::Add, char('+')),
+			value(BinaryOperator::Subtract, char('-'))
 		))(i)?;
 
 		let (i, _) = multispace0(i)?;
@@ -193,11 +179,7 @@ fn parse_expression_add(input: &str) -> IResult<&str, Expr> {
 
 	let mut output_value = first_term;
 	for (op, inner) in operator_chain {
-		output_value = match op {
-			Operator::Add => Expr::Add(Box::new(output_value), Box::new(inner)),
-			Operator::Subtract => Expr::Subtract(Box::new(output_value), Box::new(inner)),
-			_ => panic!("unhandled operator in parse_expression_add")
-		};
+		output_value = Expr::BinaryExpr(op, Box::new(output_value), Box::new(inner));
 	}
 
 	Ok((i, output_value))
@@ -210,8 +192,8 @@ fn parse_expression_bitshift(input: &str) -> IResult<&str, Expr> {
 	let (i, operator_chain) = many0(|input: &str| {
 		let (i, _) = multispace0(input)?;
 		let (i, op) = alt((
-			value(Operator::BitShiftLeft, tag("<<")),
-			value(Operator::BitShiftRight, tag(">>"))
+			value(BinaryOperator::BitShiftLeft, tag("<<")),
+			value(BinaryOperator::BitShiftRight, tag(">>"))
 		))(i)?;
 
 		let (i, _) = multispace0(i)?;
@@ -222,11 +204,7 @@ fn parse_expression_bitshift(input: &str) -> IResult<&str, Expr> {
 
 	let mut output_value = first_term;
 	for (op, inner) in operator_chain {
-		output_value = match op {
-			Operator::BitShiftLeft => Expr::BitShiftLeft(Box::new(output_value), Box::new(inner)),
-			Operator::BitShiftRight => Expr::BitShiftRight(Box::new(output_value), Box::new(inner)),
-			_ => panic!("unhandled operator in parse_expression_bitshift")
-		};
+		output_value = Expr::BinaryExpr(op, Box::new(output_value), Box::new(inner));
 	}
 
 	Ok((i, output_value))
@@ -239,10 +217,10 @@ fn parse_expression_compare(input: &str) -> IResult<&str, Expr> {
 	let (i, operator_chain) = many0(|input: &str| {
 		let (i, _) = multispace0(input)?;
 		let (i, op) = alt((
-			value(Operator::LessThanEqual, tag("<=")),
-			value(Operator::LessThan, char('<')),
-			value(Operator::GreaterThanEqual, tag(">=")),
-			value(Operator::GreaterThan, char('>')),
+			value(BinaryOperator::LessThanEqual, tag("<=")),
+			value(BinaryOperator::LessThan, char('<')),
+			value(BinaryOperator::GreaterThanEqual, tag(">=")),
+			value(BinaryOperator::GreaterThan, char('>')),
 		))(i)?;
 
 		let (i, _) = multispace0(i)?;
@@ -253,13 +231,7 @@ fn parse_expression_compare(input: &str) -> IResult<&str, Expr> {
 
 	let mut output_value = first_term;
 	for (op, inner) in operator_chain {
-		output_value = match op {
-			Operator::LessThanEqual => Expr::LessThanEqual(Box::new(output_value), Box::new(inner)),
-			Operator::LessThan => Expr::LessThan(Box::new(output_value), Box::new(inner)),
-			Operator::GreaterThanEqual => Expr::GreaterThanEqual(Box::new(output_value), Box::new(inner)),
-			Operator::GreaterThan => Expr::GreaterThan(Box::new(output_value), Box::new(inner)),
-			_ => panic!("unhandled operator in parse_expression_compare")
-		};
+		output_value = Expr::BinaryExpr(op, Box::new(output_value), Box::new(inner));
 	}
 
 	Ok((i, output_value))
@@ -272,8 +244,8 @@ fn parse_expression_equality(input: &str) -> IResult<&str, Expr> {
 	let (i, operator_chain) = many0(|input: &str| {
 		let (i, _) = multispace0(input)?;
 		let (i, op) = alt((
-			value(Operator::NotEqual, tag("!=")),
-			value(Operator::Equal, tag("=="))
+			value(BinaryOperator::NotEqual, tag("!=")),
+			value(BinaryOperator::Equal, tag("=="))
 		))(i)?;
 
 		let (i, _) = multispace0(i)?;
@@ -284,11 +256,7 @@ fn parse_expression_equality(input: &str) -> IResult<&str, Expr> {
 
 	let mut output_value = first_term;
 	for (op, inner) in operator_chain {
-		output_value = match op {
-			Operator::NotEqual => Expr::NotEqual(Box::new(output_value), Box::new(inner)),
-			Operator::Equal => Expr::Equal(Box::new(output_value), Box::new(inner)),
-			_ => panic!("unhandled operator in parse_expression_equality")
-		};
+		output_value = Expr::BinaryExpr(op, Box::new(output_value), Box::new(inner));
 	}
 
 	Ok((i, output_value))
@@ -310,7 +278,7 @@ fn parse_expression_bitwise_and(input: &str) -> IResult<&str, Expr> {
 
 	let mut output_value = first_term;
 	for inner in operator_chain {
-		output_value = Expr::BitAnd(Box::new(output_value), Box::new(inner));
+		output_value = Expr::BinaryExpr(BinaryOperator::BitAnd, Box::new(output_value), Box::new(inner));
 	}
 
 	Ok((i, output_value))
@@ -332,7 +300,7 @@ fn parse_expression_bitwise_xor(input: &str) -> IResult<&str, Expr> {
 
 	let mut output_value = first_term;
 	for inner in operator_chain {
-		output_value = Expr::BitXor(Box::new(output_value), Box::new(inner));
+		output_value = Expr::BinaryExpr(BinaryOperator::BitXor, Box::new(output_value), Box::new(inner));
 	}
 
 	Ok((i, output_value))
@@ -354,7 +322,7 @@ fn parse_expression_bitwise_or(input: &str) -> IResult<&str, Expr> {
 
 	let mut output_value = first_term;
 	for inner in operator_chain {
-		output_value = Expr::BitOr(Box::new(output_value), Box::new(inner));
+		output_value = Expr::BinaryExpr(BinaryOperator::BitOr, Box::new(output_value), Box::new(inner));
 	}
 
 	Ok((i, output_value))
@@ -376,7 +344,7 @@ fn parse_expression_logical_and(input: &str) -> IResult<&str, Expr> {
 
 	let mut output_value = first_term;
 	for inner in operator_chain {
-		output_value = Expr::And(Box::new(output_value), Box::new(inner));
+		output_value = Expr::BinaryExpr(BinaryOperator::And, Box::new(output_value), Box::new(inner));
 	}
 
 	Ok((i, output_value))
@@ -398,7 +366,7 @@ fn parse_expression_logical_or(input: &str) -> IResult<&str, Expr> {
 
 	let mut output_value = first_term;
 	for inner in operator_chain {
-		output_value = Expr::Or(Box::new(output_value), Box::new(inner));
+		output_value = Expr::BinaryExpr(BinaryOperator::Or, Box::new(output_value), Box::new(inner));
 	}
 
 	Ok((i, output_value))
