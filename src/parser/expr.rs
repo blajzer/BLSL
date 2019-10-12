@@ -17,6 +17,64 @@ use nom_locate::position;
 // Precedence rules based on C:
 // https://en.cppreference.com/w/c/language/operator_precedence
 
+macro_rules! parse_single_operator {
+	($name:ident, $recurse:ident, $op_str:expr, $op_type:expr) => {
+		fn $name(input: Span) -> IResult<Span, Expr> {
+			let (i, _) = multispace0(input)?;
+			let (i, first_term) = $recurse(i)?;
+
+			let (i, operator_chain) = many0(|input: Span| {
+				let (i, _) = multispace0(input)?;
+				let (i, pos) = position(i)?;
+				let (i, _) = tag($op_str)(i)?;
+
+				let (i, _) = multispace0(i)?;
+				let (i, inner) = $recurse(i)?;
+
+				Ok((i, (pos, inner)))
+			})(i)?;
+
+			let mut output_value = first_term;
+			for (pos, inner) in operator_chain {
+				output_value = Expr::BinaryExpr {pos: pos, op: $op_type, lhs: Box::new(output_value), rhs: Box::new(inner)};
+			}
+
+			Ok((i, output_value))
+		}
+	};
+}
+
+macro_rules! parse_multi_operator {
+	($name:ident, $recurse:ident, $(($op_str:expr, $op_type:expr)),+) => {
+		fn $name(input: Span) -> IResult<Span, Expr> {
+
+			let (i, _) = multispace0(input)?;
+			let (i, first_term) = $recurse(i)?;
+
+			let (i, operator_chain) = many0(|input: Span| {
+				let (i, _) = multispace0(input)?;
+				let (i, pos) = position(i)?;
+				let (i, op) = alt((
+					$(
+						value($op_type, tag($op_str)),
+					)+
+				))(i)?;
+
+				let (i, _) = multispace0(i)?;
+				let (i, inner) = $recurse(i)?;
+
+				Ok((i, (pos, op, inner)))
+			})(i)?;
+
+			let mut output_value = first_term;
+			for (pos, op, inner) in operator_chain {
+				output_value =  Expr::BinaryExpr {pos: pos, op: op, lhs: Box::new(output_value), rhs: Box::new(inner)};
+			}
+
+			Ok((i, output_value))
+		}
+	};
+}
 
 enum SomeInt {
 	U64(u64),
@@ -203,253 +261,49 @@ fn parse_expression_unary(input: Span) -> IResult<Span, Expr> {
 	}
 }
 
-fn parse_expression_multiply(input: Span) -> IResult<Span, Expr> {
-	let (i, _) = multispace0(input)?;
-	let (i, first_term) = parse_expression_unary(i)?;
+parse_multi_operator!(
+	parse_expression_multiply,
+	parse_expression_unary,
+	("*", BinaryOperator::Multiply),
+	("/", BinaryOperator::Divide),
+	("%", BinaryOperator::Modulus)
+);
 
-	let (i, operator_chain) = many0(|input: Span| {
-		let (i, _) = multispace0(input)?;
-		let (i, pos) = position(i)?;
-		let (i, op) = alt((
-			value(BinaryOperator::Multiply, char('*')),
-			value(BinaryOperator::Divide, char('/')),
-			value(BinaryOperator::Modulus, char('%'))
-		))(i)?;
+parse_multi_operator!(
+	parse_expression_add,
+	parse_expression_multiply,
+	("+", BinaryOperator::Add),
+	("-", BinaryOperator::Subtract)
+);
 
-		let (i, _) = multispace0(i)?;
-		let (i, inner) = parse_expression_unary(i)?;
+parse_multi_operator!(
+	parse_expression_bitshift,
+	parse_expression_add,
+	("<<", BinaryOperator::BitShiftLeft),
+	(">>", BinaryOperator::BitShiftRight)
+);
 
-		Ok((i, (pos, op, inner)))
-	})(i)?;
+parse_multi_operator!(
+	parse_expression_compare,
+	parse_expression_bitshift,
+	("<=", BinaryOperator::LessThanEqual),
+	("<", BinaryOperator::LessThan),
+	(">=", BinaryOperator::GreaterThanEqual),
+	(">", BinaryOperator::GreaterThan)
+);
 
-	let mut output_value = first_term;
-	for (pos, op, inner) in operator_chain {
-		output_value =  Expr::BinaryExpr {pos: pos, op: op, lhs: Box::new(output_value), rhs: Box::new(inner)};
-	}
+parse_multi_operator!(
+	parse_expression_equality,
+	parse_expression_compare,
+	("!=", BinaryOperator::NotEqual),
+	("==", BinaryOperator::Equal)
+);
 
-	Ok((i, output_value))
-}
-
-fn parse_expression_add(input: Span) -> IResult<Span, Expr> {
-	let (i, _) = multispace0(input)?;
-	let (i, first_term) = parse_expression_multiply(i)?;
-
-	let (i, operator_chain) = many0(|input: Span| {
-		let (i, _) = multispace0(input)?;
-		let (i, pos) = position(i)?;
-		let (i, op) = alt((
-			value(BinaryOperator::Add, char('+')),
-			value(BinaryOperator::Subtract, char('-'))
-		))(i)?;
-
-		let (i, _) = multispace0(i)?;
-		let (i, inner) = parse_expression_multiply(i)?;
-
-		Ok((i, (pos, op, inner)))
-	})(i)?;
-
-	let mut output_value = first_term;
-	for (pos, op, inner) in operator_chain {
-		output_value = Expr::BinaryExpr {pos: pos, op: op, lhs: Box::new(output_value), rhs: Box::new(inner)};
-	}
-
-	Ok((i, output_value))
-}
-
-fn parse_expression_bitshift(input: Span) -> IResult<Span, Expr> {
-	let (i, _) = multispace0(input)?;
-	let (i, first_term) = parse_expression_add(i)?;
-
-	let (i, operator_chain) = many0(|input: Span| {
-		let (i, _) = multispace0(input)?;
-		let (i, pos) = position(i)?;
-		let (i, op) = alt((
-			value(BinaryOperator::BitShiftLeft, tag("<<")),
-			value(BinaryOperator::BitShiftRight, tag(">>"))
-		))(i)?;
-
-		let (i, _) = multispace0(i)?;
-		let (i, inner) = parse_expression_add(i)?;
-
-		Ok((i, (pos, op, inner)))
-	})(i)?;
-
-	let mut output_value = first_term;
-	for (pos, op, inner) in operator_chain {
-		output_value = Expr::BinaryExpr {pos: pos, op: op, lhs: Box::new(output_value), rhs: Box::new(inner)};
-	}
-
-	Ok((i, output_value))
-}
-
-fn parse_expression_compare(input: Span) -> IResult<Span, Expr> {
-	let (i, _) = multispace0(input)?;
-	let (i, first_term) = parse_expression_bitshift(i)?;
-
-	let (i, operator_chain) = many0(|input: Span| {
-		let (i, _) = multispace0(input)?;
-		let (i, pos) = position(i)?;
-		let (i, op) = alt((
-			value(BinaryOperator::LessThanEqual, tag("<=")),
-			value(BinaryOperator::LessThan, char('<')),
-			value(BinaryOperator::GreaterThanEqual, tag(">=")),
-			value(BinaryOperator::GreaterThan, char('>')),
-		))(i)?;
-
-		let (i, _) = multispace0(i)?;
-		let (i, inner) = parse_expression_bitshift(i)?;
-
-		Ok((i, (pos, op, inner)))
-	})(i)?;
-
-	let mut output_value = first_term;
-	for (pos, op, inner) in operator_chain {
-		output_value = Expr::BinaryExpr {pos: pos, op: op, lhs: Box::new(output_value), rhs: Box::new(inner)};
-	}
-
-	Ok((i, output_value))
-}
-
-fn parse_expression_equality(input: Span) -> IResult<Span, Expr> {
-	let (i, _) = multispace0(input)?;
-	let (i, first_term) = parse_expression_compare(i)?;
-
-	let (i, operator_chain) = many0(|input: Span| {
-		let (i, _) = multispace0(input)?;
-		let (i, pos) = position(i)?;
-		let (i, op) = alt((
-			value(BinaryOperator::NotEqual, tag("!=")),
-			value(BinaryOperator::Equal, tag("=="))
-		))(i)?;
-
-		let (i, _) = multispace0(i)?;
-		let (i, inner) = parse_expression_compare(i)?;
-
-		Ok((i, (pos, op, inner)))
-	})(i)?;
-
-	let mut output_value = first_term;
-	for (pos, op, inner) in operator_chain {
-		output_value = Expr::BinaryExpr {pos: pos, op: op, lhs: Box::new(output_value), rhs: Box::new(inner)};
-	}
-
-	Ok((i, output_value))
-}
-
-fn parse_expression_bitwise_and(input: Span) -> IResult<Span, Expr> {
-	let (i, _) = multispace0(input)?;
-	let (i, first_term) = parse_expression_equality(i)?;
-
-	let (i, operator_chain) = many0(|input: Span| {
-		let (i, _) = multispace0(input)?;
-		let (i, pos) = position(i)?;
-		let (i, _) = char('&')(i)?;
-
-		let (i, _) = multispace0(i)?;
-		let (i, inner) = parse_expression_equality(i)?;
-
-		Ok((i, (pos, inner)))
-	})(i)?;
-
-	let mut output_value = first_term;
-	for (pos, inner) in operator_chain {
-		output_value = Expr::BinaryExpr {pos: pos, op: BinaryOperator::BitAnd, lhs: Box::new(output_value), rhs: Box::new(inner)};
-	}
-
-	Ok((i, output_value))
-}
-
-fn parse_expression_bitwise_xor(input: Span) -> IResult<Span, Expr> {
-	let (i, _) = multispace0(input)?;
-	let (i, first_term) = parse_expression_bitwise_and(i)?;
-
-	let (i, operator_chain) = many0(|input: Span| {
-		let (i, _) = multispace0(input)?;
-		let (i, pos) = position(i)?;
-		let (i, _) = char('^')(i)?;
-
-		let (i, _) = multispace0(i)?;
-		let (i, inner) = parse_expression_bitwise_and(i)?;
-
-		Ok((i, (pos, inner)))
-	})(i)?;
-
-	let mut output_value = first_term;
-	for (pos, inner) in operator_chain {
-		output_value = Expr::BinaryExpr {pos: pos, op: BinaryOperator::BitXor, lhs: Box::new(output_value), rhs: Box::new(inner)};
-	}
-
-	Ok((i, output_value))
-}
-
-fn parse_expression_bitwise_or(input: Span) -> IResult<Span, Expr> {
-	let (i, _) = multispace0(input)?;
-	let (i, first_term) = parse_expression_bitwise_xor(i)?;
-
-	let (i, operator_chain) = many0(|input: Span| {
-		let (i, _) = multispace0(input)?;
-		let (i, pos) = position(i)?;
-		let (i, _) = char('|')(i)?;
-
-		let (i, _) = multispace0(i)?;
-		let (i, inner) = parse_expression_bitwise_xor(i)?;
-
-		Ok((i, (pos, inner)))
-	})(i)?;
-
-	let mut output_value = first_term;
-	for (pos, inner) in operator_chain {
-		output_value = Expr::BinaryExpr {pos: pos, op: BinaryOperator::BitOr, lhs: Box::new(output_value), rhs: Box::new(inner)};
-	}
-
-	Ok((i, output_value))
-}
-
-fn parse_expression_logical_and(input: Span) -> IResult<Span, Expr> {
-	let (i, _) = multispace0(input)?;
-	let (i, first_term) = parse_expression_bitwise_or(i)?;
-
-	let (i, operator_chain) = many0(|input: Span| {
-		let (i, _) = multispace0(input)?;
-		let (i, pos) = position(i)?;
-		let (i, _) = tag("&&")(i)?;
-
-		let (i, _) = multispace0(i)?;
-		let (i, inner) = parse_expression_bitwise_or(i)?;
-
-		Ok((i, (pos, inner)))
-	})(i)?;
-
-	let mut output_value = first_term;
-	for (pos, inner) in operator_chain {
-		output_value = Expr::BinaryExpr {pos: pos, op: BinaryOperator::And, lhs: Box::new(output_value), rhs: Box::new(inner)};
-	}
-
-	Ok((i, output_value))
-}
-
-fn parse_expression_logical_or(input: Span) -> IResult<Span, Expr> {
-	let (i, _) = multispace0(input)?;
-	let (i, first_term) = parse_expression_logical_and(i)?;
-
-	let (i, operator_chain) = many0(|input: Span| {
-		let (i, _) = multispace0(input)?;
-		let (i, pos) = position(i)?;
-		let (i, _) = tag("||")(i)?;
-
-		let (i, _) = multispace0(i)?;
-		let (i, inner) = parse_expression_logical_and(i)?;
-
-		Ok((i, (pos, inner)))
-	})(i)?;
-
-	let mut output_value = first_term;
-	for (pos, inner) in operator_chain {
-		output_value = Expr::BinaryExpr {pos: pos, op: BinaryOperator::Or, lhs: Box::new(output_value), rhs: Box::new(inner)};
-	}
-
-	Ok((i, output_value))
-}
+parse_single_operator!(parse_expression_bitwise_and, parse_expression_equality, "&", BinaryOperator::BitAnd);
+parse_single_operator!(parse_expression_bitwise_xor, parse_expression_bitwise_and, "^", BinaryOperator::BitXor);
+parse_single_operator!(parse_expression_bitwise_or, parse_expression_bitwise_xor, "|", BinaryOperator::BitOr);
+parse_single_operator!(parse_expression_logical_and, parse_expression_bitwise_or, "&&", BinaryOperator::And);
+parse_single_operator!(parse_expression_logical_or, parse_expression_logical_and, "||", BinaryOperator::Or);
 
 fn parse_expression_ternary(input: Span) -> IResult<Span, Expr> {
 	let (i, _) = multispace0(input)?;
