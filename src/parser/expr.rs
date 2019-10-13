@@ -8,7 +8,7 @@ use nom::{
 	branch::alt,
 	bytes::complete::tag,
 	character::complete::{char, hex_digit1, multispace0},
-	combinator::{map, opt, value},
+	combinator::{cut, map, opt, value},
 	multi::many0,
 	sequence::{delimited, preceded}
 };
@@ -29,7 +29,7 @@ macro_rules! parse_single_operator {
 				let (i, _) = tag($op_str)(i)?;
 
 				let (i, _) = multispace0(i)?;
-				let (i, inner) = $recurse(i)?;
+				let (i, inner) = cut($recurse)(i)?;
 
 				Ok((i, (pos, inner)))
 			})(i)?;
@@ -61,7 +61,7 @@ macro_rules! parse_multi_operator {
 				))(i)?;
 
 				let (i, _) = multispace0(i)?;
-				let (i, inner) = $recurse(i)?;
+				let (i, inner) = cut($recurse)(i)?;
 
 				Ok((i, (pos, op, inner)))
 			})(i)?;
@@ -84,11 +84,11 @@ enum SomeInt {
 fn parse_double(input: Span) -> IResult<Span, f64> {
 	let (i, leading_digits) = digit1(input)?;
 	let (i, _) = char('.')(i)?;
-	let (i, trailing_digits) = digit1(i)?;
+	let (i, trailing_digits) = cut(digit1)(i)?;
 	let (i, scientific) = opt(|input: Span| {
 		let (i, _) = char('e')(input)?;
 		let (i, sign) = opt(alt((tag("-"), tag("+"))))(i)?;
-		let (i, digits) = digit1(i)?;
+		let (i, digits) = cut(digit1)(i)?;
 
 		let mut combined = String::new();
 		combined += "e";
@@ -129,7 +129,7 @@ fn parse_integer(input: Span) -> IResult<Span, SomeInt> {
 
 fn parse_hex(input: Span) -> IResult<Span, u64> {
 	let (i, _) = alt((tag("0x"), tag("0X")))(input)?;
-	let (i, digits) = hex_digit1(i)?;
+	let (i, digits) = cut(hex_digit1)(i)?;
 
 	if let Ok(num) = u64::from_str_radix(digits.fragment, 16) {
 		Ok((i, num))
@@ -173,7 +173,7 @@ fn parse_function_call_arguments(input: Span) -> IResult<Span, Vec<Expr>> {
 		let (i, _) = char(',')(i)?;
 
 		let (i, _) = multispace0(i)?;
-		let (i, arg) = parse_expression(i)?;
+		let (i, arg) = cut(parse_expression)(i)?;
 
 		Ok((i, arg))
 	})(i)?;
@@ -188,7 +188,7 @@ fn parse_function_call(input: Span) -> IResult<Span, Expr> {
 	let (i, func_name) = parse_identifier(i)?;
 
 	let (i, _) = multispace0(i)?;
-	let (i, arguments) = delimited(char('('), opt(parse_function_call_arguments), preceded(multispace0, char(')')))(i)?;
+	let (i, arguments) = delimited(char('('), opt(parse_function_call_arguments), preceded(multispace0, cut(char(')'))))(i)?;
 
 	let final_args = if let Some(args_inner) = arguments {
 		args_inner
@@ -205,12 +205,12 @@ fn parse_expression_lowest(input: Span) -> IResult<Span, Expr> {
 	let (i, term) = alt((
 		parse_function_call,
 		map(parse_literal, |l| Expr::Literal{pos: pos, value: l}),
-		delimited(char('('), parse_expression, preceded(multispace0, char(')')))
+		delimited(char('('), parse_expression, preceded(multispace0, cut(char(')'))))
 	))(i)?;
 
 	let (i, pos) = position(i)?;
 	let (i, array_access) = opt(
-		delimited(preceded(multispace0, char('[')), parse_expression, preceded(multispace0, char(']')))
+		delimited(preceded(multispace0, char('[')), parse_expression, preceded(multispace0, cut(char(']'))))
 	)(i)?;
 
 	if let Some(array) = array_access {
@@ -293,11 +293,11 @@ fn parse_expression_ternary(input: Span) -> IResult<Span, Expr> {
 		let (i, _) = multispace0(input)?;
 		let (i, pos) = position(i)?;
 		let (i, _) = char('?')(i)?;
-		let (i, if_term) = parse_expression(i)?;
+		let (i, if_term) = cut(parse_expression)(i)?;
 
 		let (i, _) = multispace0(i)?;
-		let (i, _) = char(':')(i)?;
-		let (i, else_term) = parse_expression_logical_or(i)?;
+		let (i, _) = cut(char(':'))(i)?;
+		let (i, else_term) = cut(parse_expression_logical_or)(i)?;
 
 		Ok((i, (pos, if_term, else_term)))
 	})(i)?;
