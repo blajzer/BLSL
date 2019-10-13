@@ -139,8 +139,6 @@ fn parse_hex(input: Span) -> IResult<Span, u64> {
 }
 
 fn parse_literal(input: Span) -> IResult<Span, Literal> {
-	// TODO: fix all of this. it doesn't greedily handle floats properly...
-	// i.e. it thinks everything is a float (-_-)
 	alt((
 		map(parse_double, |f: f64| Literal::Float(f)),
 		map(parse_hex, |u: u64| Literal::UInt(u)),
