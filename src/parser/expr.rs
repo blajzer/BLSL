@@ -220,28 +220,7 @@ fn parse_expression_lowest(input: Span) -> IResult<Span, Expr> {
 	}
 }
 
-fn parse_expression_member_access(input: Span) -> IResult<Span, Expr> {
-	let (i, _) = multispace0(input)?;
-	let (i, term) = parse_expression_lowest(i)?;
-
-	let (i, operator_chain) = many0(|input: Span| {
-		let (i, _) = multispace0(input)?;
-		let (i, _) = char('.')(i)?;
-
-		let (i, _) = multispace0(i)?;
-		let (i, pos) = position(i)?;
-		let (i, inner) = parse_expression_lowest(i)?;
-
-		Ok((i, (pos, inner)))
-	})(i)?;
-
-	let mut output_value = term;
-	for (pos, inner) in operator_chain {
-		output_value = Expr::BinaryExpr {pos: pos, op: BinaryOperator::MemberAccess, lhs: Box::new(output_value), rhs: Box::new(inner)};
-	}
-
-	Ok((i, output_value))
-}
+parse_single_operator!(parse_expression_member_access, parse_expression_lowest, ".", BinaryOperator::MemberAccess);
 
 fn parse_expression_unary(input: Span) -> IResult<Span, Expr> {
 	let (i, _) = multispace0(input)?;
