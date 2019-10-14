@@ -3,6 +3,29 @@ use nom_locate::LocatedSpan;
 pub type Span<'a> = LocatedSpan<&'a str>;
 
 #[derive(Debug)]
+pub struct FunctionParam<'a> {
+	pub pos: Span<'a>
+}
+
+#[derive(Debug)]
+pub struct TypeDecl<'a> {
+	pub pos: Span<'a>,
+	pub name: String,
+	pub path: Vec<String>
+}
+
+#[derive(Debug)]
+pub enum Definition<'a> {
+	Function {
+		pos: Span<'a>,
+		name: String,
+		params: Vec<FunctionParam<'a>>,
+		ret: TypeDecl<'a>,
+		body: Statement<'a>
+	}
+}
+
+#[derive(Debug)]
 pub enum Statement<'a> {
 	Block {
 		pos: Span<'a>,
@@ -11,7 +34,44 @@ pub enum Statement<'a> {
 	Expr {
 		pos: Span<'a>,
 		expr: Expr<'a>
+	},
+	Assignment {
+		pos: Span<'a>,
+		lhs: Expr<'a>,
+		rhs: Expr<'a>,
+		op: AssignmentOperator
+	},
+	If {
+		pos: Span<'a>,
+		cond: Expr<'a>,
+		if_body: Box<Statement<'a>>,
+		else_body: Option<Box<Statement<'a>>>
+	},
+	VariableDeclaration {
+		pos: Span<'a>,
+		name: String,
+		var_type: TypeDecl<'a>,
+		initalization: Option<Expr<'a>>
+	},
+	ForLoop {
+		pos: Span<'a>,
+		initalization: Box<Statement<'a>>,
+		cond: Expr<'a>,
+		update: Box<Statement<'a>>
 	}
+}
+
+#[derive(Debug, Clone)]
+pub enum AssignmentOperator {
+	Assign,
+	AssignAdd,
+	AssignSubtract,
+	AssignMultiply,
+	AssignDivide,
+	AssignModulus,
+	AssignBitAnd,
+	AssignBitOr,
+	AssignBitXor
 }
 
 #[derive(Debug)]
