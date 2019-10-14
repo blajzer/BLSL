@@ -18,8 +18,8 @@ use nom_locate::position;
 // https://en.cppreference.com/w/c/language/operator_precedence
 
 macro_rules! parse_single_operator {
-	($name:ident, $recurse:ident, $op_str:expr, $op_type:expr) => {
-		fn $name(input: Span) -> IResult<Span, Expr> {
+	($name:ident, $recurse:ident, $op_str:expr, $op_type:expr $(, $visibility:ident)?) => {
+		$($visibility)? fn $name(input: Span) -> IResult<Span, Expr> {
 			let (i, _) = multispace0(input)?;
 			let (i, first_term) = $recurse(i)?;
 
@@ -45,8 +45,8 @@ macro_rules! parse_single_operator {
 }
 
 macro_rules! parse_multi_operator {
-	($name:ident, $recurse:ident, $(($op_str:expr, $op_type:expr)),+) => {
-		fn $name(input: Span) -> IResult<Span, Expr> {
+	($name:ident, $recurse:ident, $(($op_str:expr, $op_type:expr)),+ $(, $visibility:ident)?) => {
+		$($visibility)? fn $name(input: Span) -> IResult<Span, Expr> {
 
 			let (i, _) = multispace0(input)?;
 			let (i, first_term) = $recurse(i)?;
@@ -206,19 +206,40 @@ fn parse_expression_lowest(input: Span) -> IResult<Span, Expr> {
 		delimited(char('('), parse_expression, preceded(multispace0, cut(char(')'))))
 	))(i)?;
 
-	let (i, pos) = position(i)?;
-	let (i, array_access) = opt(
-		delimited(preceded(multispace0, char('[')), parse_expression, preceded(multispace0, cut(char(']'))))
-	)(i)?;
-
-	if let Some(array) = array_access {
-		Ok((i, Expr::BinaryExpr {pos: pos, op: BinaryOperator::ArrayAccess, lhs: Box::new(term), rhs: Box::new(array)}))
-	} else {
-		Ok((i, term))
-	}
+	Ok((i, term))
 }
 
-parse_single_operator!(parse_expression_member_access, parse_expression_lowest, ".", BinaryOperator::MemberAccess);
+pub fn parse_expression_member_access<'a>(input: Span<'a>) -> IResult<Span<'a>, Expr> {
+	let (i, _) = multispace0(input)?;
+	let (i, first_term) = parse_expression_lowest(i)?;
+
+	let (i, operator_chain) = many0(|input: Span<'a>| {
+		let (i, _) = multispace0(input)?;
+		let (i, pos) = position(i)?;
+		let (i, (op, inner)) = alt((
+			|input: Span<'a>| {
+				let (i, _) = tag(".")(input)?;
+				let (i, _) = multispace0(i)?;
+				let (i, inner) = cut(parse_expression_lowest)(i)?;
+
+				Ok((i, (BinaryOperator::MemberAccess, inner)))
+			},
+			|input: Span<'a>| {
+				let (i, inner) = delimited(char('['), parse_expression, preceded(multispace0, cut(char(']'))))(input)?;
+				Ok((i, (BinaryOperator::ArrayAccess, inner)))
+			},
+		))(i)?;
+
+		Ok((i, (pos, op, inner)))
+	})(i)?;
+
+	let mut output_value = first_term;
+	for (pos, op, inner) in operator_chain {
+		output_value =  Expr::BinaryExpr {pos: pos, op: op, lhs: Box::new(output_value), rhs: Box::new(inner)};
+	}
+
+	Ok((i, output_value))
+}
 
 fn parse_expression_unary(input: Span) -> IResult<Span, Expr> {
 	let (i, _) = multispace0(input)?;
