@@ -20,16 +20,13 @@ use nom_locate::position;
 macro_rules! parse_single_operator {
 	($name:ident, $recurse:ident, $op_str:expr, $op_type:expr $(, $visibility:ident)?) => {
 		$($visibility)? fn $name(input: Span) -> IResult<Span, Expr> {
-			let (i, _) = multispace0(input)?;
-			let (i, first_term) = $recurse(i)?;
+			let (i, first_term) = preceded(multispace0, $recurse)(input)?;
 
 			let (i, operator_chain) = many0(|input: Span| {
-				let (i, _) = multispace0(input)?;
-				let (i, pos) = position(i)?;
+				let (i, pos) = preceded(multispace0, position)(input)?;
 				let (i, _) = tag($op_str)(i)?;
 
-				let (i, _) = multispace0(i)?;
-				let (i, inner) = cut($recurse)(i)?;
+				let (i, inner) = preceded(multispace0, cut($recurse))(i)?;
 
 				Ok((i, (pos, inner)))
 			})(i)?;
@@ -47,21 +44,17 @@ macro_rules! parse_single_operator {
 macro_rules! parse_multi_operator {
 	($name:ident, $recurse:ident, $(($op_str:expr, $op_type:expr)),+ $(, $visibility:ident)?) => {
 		$($visibility)? fn $name(input: Span) -> IResult<Span, Expr> {
-
-			let (i, _) = multispace0(input)?;
-			let (i, first_term) = $recurse(i)?;
+			let (i, first_term) = preceded(multispace0, $recurse)(input)?;
 
 			let (i, operator_chain) = many0(|input: Span| {
-				let (i, _) = multispace0(input)?;
-				let (i, pos) = position(i)?;
+				let (i, pos) = preceded(multispace0, position)(input)?;
 				let (i, op) = alt((
 					$(
 						value($op_type, tag($op_str)),
 					)+
 				))(i)?;
 
-				let (i, _) = multispace0(i)?;
-				let (i, inner) = cut($recurse)(i)?;
+				let (i, inner) = preceded(multispace0, cut($recurse))(i)?;
 
 				Ok((i, (pos, op, inner)))
 			})(i)?;
@@ -159,19 +152,14 @@ fn parse_literal(input: Span) -> IResult<Span, Literal> {
 }
 
 fn parse_function_call_arguments(input: Span) -> IResult<Span, Vec<Expr>> {
-	let (i, _) = multispace0(input)?;
-
-	let (i, first_arg) = parse_expression(i)?;
+	let (i, first_arg) = preceded(multispace0, parse_expression)(input)?;
 
 	let mut result = Vec::new();
 	result.push(first_arg);
 
 	let (i, mut other_args) = many0(|input: Span| {
-		let (i, _) = multispace0(input)?;
-		let (i, _) = char(',')(i)?;
-
-		let (i, _) = multispace0(i)?;
-		let (i, arg) = cut(parse_expression)(i)?;
+		let (i, _) = preceded(multispace0, char(','))(input)?;
+		let (i, arg) = preceded(multispace0, cut(parse_expression))(i)?;
 
 		Ok((i, arg))
 	})(i)?;
@@ -185,8 +173,7 @@ fn parse_function_call(input: Span) -> IResult<Span, Expr> {
 	let (i, pos) = position(input)?;
 	let (i, func_name) = parse_identifier(i)?;
 
-	let (i, _) = multispace0(i)?;
-	let (i, arguments) = delimited(char('('), opt(parse_function_call_arguments), preceded(multispace0, cut(char(')'))))(i)?;
+	let (i, arguments) = preceded(multispace0, delimited(char('('), opt(parse_function_call_arguments), preceded(multispace0, cut(char(')')))))(i)?;
 
 	let final_args = if let Some(args_inner) = arguments {
 		args_inner
@@ -198,8 +185,7 @@ fn parse_function_call(input: Span) -> IResult<Span, Expr> {
 }
 
 fn parse_expression_lowest(input: Span) -> IResult<Span, Expr> {
-	let (i, _) = multispace0(input)?;
-	let (i, pos) = position(i)?;
+	let (i, pos) = preceded(multispace0, position)(input)?;
 	let (i, term) = alt((
 		parse_function_call,
 		map(parse_literal, |l| Expr::Literal{pos: pos, value: l}),
@@ -210,17 +196,14 @@ fn parse_expression_lowest(input: Span) -> IResult<Span, Expr> {
 }
 
 pub fn parse_expression_member_access<'a>(input: Span<'a>) -> IResult<Span<'a>, Expr> {
-	let (i, _) = multispace0(input)?;
-	let (i, first_term) = parse_expression_lowest(i)?;
+	let (i, first_term) = preceded(multispace0, parse_expression_lowest)(input)?;
 
 	let (i, operator_chain) = many0(|input: Span<'a>| {
-		let (i, _) = multispace0(input)?;
-		let (i, pos) = position(i)?;
+		let (i, pos) = preceded(multispace0, position)(input)?;
 		let (i, (op, inner)) = alt((
 			|input: Span<'a>| {
 				let (i, _) = tag(".")(input)?;
-				let (i, _) = multispace0(i)?;
-				let (i, inner) = cut(parse_expression_lowest)(i)?;
+				let (i, inner) = preceded(multispace0, cut(parse_expression_lowest))(i)?;
 
 				Ok((i, (BinaryOperator::MemberAccess, inner)))
 			},
@@ -242,8 +225,7 @@ pub fn parse_expression_member_access<'a>(input: Span<'a>) -> IResult<Span<'a>, 
 }
 
 fn parse_expression_unary(input: Span) -> IResult<Span, Expr> {
-	let (i, _) = multispace0(input)?;
-	let (i, pos) = position(i)?;
+	let (i, pos) = preceded(multispace0, position)(input)?;
 	let (i, leading_op) = opt(alt((
 		value(UnaryOperator::Negate, char('-')),
 		value(UnaryOperator::Not, char('!')),
@@ -304,18 +286,15 @@ parse_single_operator!(parse_expression_logical_and, parse_expression_bitwise_or
 parse_single_operator!(parse_expression_logical_or, parse_expression_logical_and, "||", BinaryOperator::Or);
 
 fn parse_expression_ternary(input: Span) -> IResult<Span, Expr> {
-	let (i, _) = multispace0(input)?;
-	let (i, first_term) = parse_expression_logical_or(i)?;
+	let (i, first_term) = preceded(multispace0, parse_expression_logical_or)(input)?;
 
 	let (i, ternary_terms) = opt(|input: Span| {
 		// Note: C/C++ parse the middle expression as though it is in parenthesis, so recurse from the top here
-		let (i, _) = multispace0(input)?;
-		let (i, pos) = position(i)?;
+		let (i, pos) = preceded(multispace0, position)(input)?;
 		let (i, _) = char('?')(i)?;
 		let (i, if_term) = cut(parse_expression)(i)?;
 
-		let (i, _) = multispace0(i)?;
-		let (i, _) = cut(char(':'))(i)?;
+		let (i, _) = preceded(multispace0, cut(char(':')))(i)?;
 		let (i, else_term) = cut(parse_expression_logical_or)(i)?;
 
 		Ok((i, (pos, if_term, else_term)))

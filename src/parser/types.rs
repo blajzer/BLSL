@@ -11,7 +11,9 @@ pub struct FunctionParam<'a> {
 pub struct TypeDecl<'a> {
 	pub pos: Span<'a>,
 	pub name: String,
-	pub path: Vec<String>
+	pub path: Vec<String>,
+	pub is_ref: bool,
+	pub is_const: bool
 }
 
 #[derive(Debug)]
@@ -58,7 +60,13 @@ pub enum Statement<'a> {
 		initalization: Box<Statement<'a>>,
 		cond: Expr<'a>,
 		update: Box<Statement<'a>>
-	}
+	},
+	Return {
+		pos: Span<'a>,
+		expr: Option<Expr<'a>>
+	},
+	Break {pos: Span<'a>},
+	Continue {pos: Span<'a>}
 }
 
 #[derive(Debug, Clone)]

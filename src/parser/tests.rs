@@ -1,4 +1,5 @@
 use super::*;
+use super::definition::*;
 use super::expr::*;
 use super::statement::*;
 use super::types::*;

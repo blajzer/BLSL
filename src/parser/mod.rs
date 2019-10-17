@@ -1,3 +1,4 @@
+pub mod definition;
 pub mod expr;
 pub mod statement;
 pub mod types;
@@ -9,9 +10,12 @@ use types::*;
 
 use nom::{
 	IResult,
-	character::complete::{alpha1, alphanumeric0, digit1},
-	combinator::{opt},
+	bytes::complete::tag,
+	character::complete::{alpha1, alphanumeric0, digit1, multispace0, multispace1},
+	combinator::opt,
+	sequence::terminated
 };
+use nom_locate::position;
 
 // todo: underscores
 fn parse_identifier(input: Span) -> IResult<Span, String> {
@@ -24,6 +28,26 @@ fn parse_identifier(input: Span) -> IResult<Span, String> {
 	}
 
 	Ok((i, result))
+}
+
+fn parse_type_decl(input: Span) -> IResult<Span, TypeDecl> {
+	let (i, _) = multispace0(input)?;
+	let (i, pos) = position(i)?;
+	
+	let (i, maybe_const) = opt(terminated(tag("const"), multispace1))(i)?;
+	let (i, maybe_ref) = opt(terminated(tag("ref"), multispace1))(i)?;
+
+	let (i, name) = parse_identifier(i)?;
+
+	let decl = TypeDecl {
+		pos: pos,
+		name: name.to_string(),
+		path: vec!(),
+		is_ref: maybe_ref.is_some(),
+		is_const: maybe_const.is_some()
+	};
+
+	Ok((i, decl))
 }
 
 pub fn expression_to_string(e: &Expr) -> String {
