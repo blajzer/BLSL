@@ -4,7 +4,10 @@ pub type Span<'a> = LocatedSpan<&'a str>;
 
 #[derive(Debug)]
 pub struct FunctionParam<'a> {
-	pub pos: Span<'a>
+	pub pos: Span<'a>,
+	pub name: String,
+	pub type_name: TypeDecl<'a>,
+	// TODO: semantic
 }
 
 #[derive(Debug)]
@@ -22,7 +25,7 @@ pub enum Definition<'a> {
 		pos: Span<'a>,
 		name: String,
 		params: Vec<FunctionParam<'a>>,
-		ret: TypeDecl<'a>,
+		ret: Option<TypeDecl<'a>>,
 		body: Statement<'a>
 	}
 }

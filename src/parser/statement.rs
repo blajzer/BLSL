@@ -115,7 +115,7 @@ fn parse_statement_continue(input: Span) -> IResult<Span, Statement> {
 	let (i, _) = preceded(multispace0, tag("continue"))(i)?;
 	let (i, _) = preceded(multispace0, tag(";"))(i)?;
 
-	Ok((i, Statement::Break {pos: pos}))
+	Ok((i, Statement::Continue {pos: pos}))
 }
 
 pub fn parse_statement(input: Span) -> IResult<Span, Statement> {

@@ -2,6 +2,7 @@ extern crate nom;
 extern crate nom_locate;
 
 mod parser;
+use parser::definition::parse_definition;
 use parser::expression_to_string;
 use parser::expr::parse_expression;
 use parser::statement::parse_statement;
@@ -13,17 +14,9 @@ use nom::{
 };
 
 fn main() {
-	/*println!("parsed {:?}", parse_statement(Span::new("	if( a - b > 6) {
-		g();
-	} else if (x)
-	{
-		y += 4;
-		r.t.w[4] = 5;
-
-	}")));
-*/
-
-	if let Ok((_, expr)) = parse_expression(Span::new("a.b.c.d.e.w[5]")) {
-		println!("{}", expression_to_string(&expr));
+	println!("parsed {:?}", parse_definition(Span::new("
+	func testFunc(int param1, int param2, vec4f param3) -> vec3f {
+		return vec3f(param1 * param2 + param3.xyz);
 	}
+	")));
 }
