@@ -45,6 +45,33 @@ fn parse_function_definition(input: Span) -> IResult<Span, Definition> {
 		}))
 }
 
+fn parse_variant_definition(input: Span) -> IResult<Span, Definition> {
+	let (i, pos) = preceded(multispace0, position)(input)?;
+	let (i, _) = tag("variant")(i)?;
+	let (i, name) = preceded(multispace1, parse_identifier)(i)?;
+	let (i, maybe_values) = opt(delimited(
+		preceded(multispace0, tag("{")),
+		separated_list(preceded(multispace0, tag(",")), parse_integer),
+		preceded(multispace0, tag("}")),
+	))(i)?;
+	
+	let values = maybe_values.unwrap_or(vec!()).iter().map(|v| {
+		match v {
+			SomeInt::I64(i) => *i,
+			SomeInt::U64(u) => *u as i64
+		}
+	}).collect();
+
+	Ok((i, Definition::Variant {
+		pos: pos,
+		name: name,
+		values: values
+	}))
+}
+
 pub fn parse_definition(input: Span) -> IResult<Span, Definition> {
-	parse_function_definition(input)
+	alt((
+		parse_variant_definition,
+		parse_function_definition
+	))(input)
 }

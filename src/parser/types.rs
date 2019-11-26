@@ -27,6 +27,11 @@ pub enum Definition<'a> {
 		params: Vec<FunctionParam<'a>>,
 		ret: Option<TypeDecl<'a>>,
 		body: Statement<'a>
+	},
+	Variant {
+		pos: Span<'a>,
+		name: String,
+		values: Vec<i64>
 	}
 }
 

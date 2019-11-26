@@ -10,9 +10,19 @@ use types::*;
 
 use nom::{
 	IResult,
+	branch::alt,
 	bytes::complete::tag,
-	character::complete::{alpha1, alphanumeric0, digit1, multispace0, multispace1},
-	combinator::opt,
+	character::complete::{
+		alpha1,
+		alphanumeric0,
+		char,
+		digit1,
+		hex_digit1,
+		multispace0,
+		multispace1},
+	combinator::{cut, opt},
+	error::{ErrorKind, ParseError},
+	Err::Error,
 	sequence::terminated
 };
 use nom_locate::position;
@@ -28,6 +38,68 @@ fn parse_identifier(input: Span) -> IResult<Span, String> {
 	}
 
 	Ok((i, result))
+}
+
+enum SomeInt {
+	U64(u64),
+	I64(i64)
+}
+
+fn parse_double(input: Span) -> IResult<Span, f64> {
+	let (i, leading_digits) = digit1(input)?;
+	let (i, _) = char('.')(i)?;
+	let (i, trailing_digits) = cut(digit1)(i)?;
+	let (i, scientific) = opt(|input: Span| {
+		let (i, _) = char('e')(input)?;
+		let (i, sign) = opt(alt((tag("-"), tag("+"))))(i)?;
+		let (i, digits) = cut(digit1)(i)?;
+
+		let mut combined = String::new();
+		combined += "e";
+		if let Some(sign) = sign {
+			combined += sign.fragment;
+		}
+		combined += digits.fragment;
+
+		Ok((i, combined))
+	})(i)?;
+
+	let mut float_string = leading_digits.fragment.to_string();
+	float_string += ".";
+	float_string += trailing_digits.fragment;
+	
+	if let Some(scientific) = scientific {
+		float_string += scientific.as_str();
+	}
+
+	if let Ok(num) = float_string.as_str().parse::<f64>() {
+		Ok((i, num))
+	} else {
+		Err(Error(ParseError::from_error_kind(i, ErrorKind::Float)))
+	}
+}
+
+fn parse_integer(input: Span) -> IResult<Span, SomeInt> {
+	let (i, digits) = digit1(input)?;
+
+	if let Ok(num) = digits.fragment.parse::<i64>() {
+		Ok((i, SomeInt::I64(num)))
+	} else if let Ok(num) = digits.fragment.parse::<u64>() {
+		Ok((i, SomeInt::U64(num)))
+	} else {
+		Err(Error(ParseError::from_error_kind(i, ErrorKind::Digit)))
+	}
+}
+
+fn parse_hex(input: Span) -> IResult<Span, u64> {
+	let (i, _) = alt((tag("0x"), tag("0X")))(input)?;
+	let (i, digits) = cut(hex_digit1)(i)?;
+
+	if let Ok(num) = u64::from_str_radix(digits.fragment, 16) {
+		Ok((i, num))
+	} else {
+		Err(Error(ParseError::from_error_kind(i, ErrorKind::HexDigit)))
+	}
 }
 
 fn parse_type_decl(input: Span) -> IResult<Span, TypeDecl> {
