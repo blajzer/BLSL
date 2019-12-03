@@ -1,11 +1,36 @@
-use super::super::parser::types::{BinaryOperator, UnaryOperator, Literal};
+use super::super::parser::types::{BinaryOperator, UnaryOperator, Literal, Span};
 
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SourcePos<'a> {
 	file: &'a str,
 	line: usize,
 	column: usize
+}
+
+impl<'a> SourcePos<'a> {
+	pub fn new(filename: &'a str, span: Span) -> SourcePos<'a> {
+		SourcePos {
+			file: filename,
+			line: span.line as usize,
+			column: span.get_utf8_column() as usize
+		}
+	}
+}
+
+#[derive(Debug)]
+pub struct ValidateError<'a> {
+	pos: SourcePos<'a>,
+	message: String
+}
+
+impl<'a> ValidateError<'a> {
+	pub fn new(pos: SourcePos<'a>, message: String) -> ValidateError<'a> {
+		ValidateError {
+			pos: pos,
+			message: message
+		}
+	}
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -103,5 +128,17 @@ pub enum Expr<'a> {
 		pos: SourcePos<'a>,
 		value: Literal,
 		type_index: usize
+	}
+}
+
+impl<'a> Expr<'a> {
+	pub fn get_type_index(&self) -> usize {
+		match self {
+			Expr::BinaryExpr { type_index, .. } => *type_index,
+			Expr::UnaryExpr { type_index, .. } => *type_index,
+			Expr::FunctionCall { type_index, .. } => *type_index,
+			Expr::Ternary { type_index, .. } => *type_index,
+			Expr::Literal { type_index, .. } => *type_index
+		}
 	}
 }
