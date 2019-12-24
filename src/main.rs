@@ -1,16 +1,18 @@
 extern crate nom;
 extern crate nom_locate;
 
-mod builtin;
+pub mod builtin;
 
-mod parser;
+pub mod parser;
 use parser::definition::parse_definition;
 use parser::expression_to_string;
 use parser::expr::parse_expression;
 use parser::statement::parse_statement;
 use parser::types::Span;
 
-mod validator;
+pub mod validator;
+
+pub mod types;
 
 use nom::{
 	IResult,

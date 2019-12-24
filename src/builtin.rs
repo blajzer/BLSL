@@ -1,14 +1,20 @@
 use super::parser::types::*;
 use super::validator::types::*;
 
-pub const BOOL_INDEX: usize = 0;
-pub const I32_INDEX: usize = 1;
-pub const U32_INDEX: usize = 2;
-pub const F16_INDEX: usize = 3;
-pub const F32_INDEX: usize = 4;
-pub const F64_INDEX: usize = 5;
+pub const VOID_INDEX: usize = 0;
+pub const BOOL_INDEX: usize = 1;
+pub const I32_INDEX: usize = 2;
+pub const U32_INDEX: usize = 3;
+pub const F16_INDEX: usize = 4;
+pub const F32_INDEX: usize = 5;
+pub const F64_INDEX: usize = 6;
+
+// TODO: generate with a macro?
 
 pub const BULTIN_TYPES: &[Type] = &[
+	// Void type
+	Type::Void,
+
 	// Basic types
 	Type::BasicType(BasicType::Bool),
 	Type::BasicType(BasicType::I32),

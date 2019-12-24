@@ -57,6 +57,7 @@ pub struct EnumValue {
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Type {
+	Void,
 	BasicType(BasicType),
 	Vector {
 		dim: usize,
@@ -78,6 +79,11 @@ pub enum Type {
 	Enum {
 		name: String,
 		values: Vec<EnumValue>
+	},
+	Function {
+		name: String,
+		argument_type_indices: Vec<usize>,
+		return_type_index: usize
 	},
 	QualifiedType {
 		is_const: bool,

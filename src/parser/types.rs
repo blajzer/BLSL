@@ -129,7 +129,7 @@ pub enum Literal {
 	Bool(bool)
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum BinaryOperator {
 	Add,
 	Subtract,
@@ -153,7 +153,7 @@ pub enum BinaryOperator {
 	ArrayAccess
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum UnaryOperator {
 	Negate,
 	Not,
