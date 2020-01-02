@@ -1,0 +1,48 @@
+// Primitive expression constructs
+// These don't allow spaces, but everything else does
+identifier := <alpha>+[<alphanum>*] // TODO: underscores
+double := <digit>+'.'<digit>+['e'['+'|'-']<digit>+]
+hexint := '0x'<hexdigit>+
+integer := <digit>+
+literal := double | hexint | integer | identifier
+
+// Expression grammar
+funcArgs := expr [',' expr]*
+funcCall := identifier '(' [funcArgs] ')'
+arrayAccess :='[' expr ']'
+exprLowest := (funcCall | literal | ('(' expr ')'))
+exprMemberAccess := exprLowest (('.' exprLowest) | arrayAccess)*
+exprUnary := ['-' | '!' | '~'] exprMemberAccess
+exprMultiply := exprUnary (('*' | '/' | '%') exprUnary)*
+exprAdd := exprMultiply (('+' | '-') exprMultiply)*
+exprBitshift := exprAdd (('<<' | '>>') exprAdd)*
+exprCompare := exprBitshift (('<=' | '<' | '>=' | '>') exprBitshift)*
+exprEquality := exprCompare (('!=' | '==') exprCompare)*
+exprBitAnd := exprEquality ('&' exprEquality)*
+exprBitXor := exprBitAnd ('^' exprBitAnd)*
+exprBitOr := exprBitXor ('|' exprBitXor)*
+exprAnd := exprBitOr ('&&' exprBitOr)*
+exprOr := exprAnd ('||' exprAnd)*
+exprTernary := exprOr ['?' expr ':' exprOr]
+expr := exprTernary
+
+// Shared Constructs
+typeDecl := ['const' | 'ref'] identifier // TODO: narrow to enforce that "ref" can only show up in function definitions?
+
+// Statements
+statementExpr := expr ';'
+statementBlock := '{' statement* '}'
+statementAssignment := exprMemberAccess ('=' | '+=' | '-=' | '*=' | '/=' | '%=' | '&=' | '|=' | '^=') expr ';'
+statementIf := 'if' '(' expr ')' statement ['else' statement]
+statementVariableDecl := typeDecl identifier ['=' expr] ';'
+statementReturn := 'return' [expr] ';'
+statementBreak := 'break' ';'
+statementContinue := 'continue' ';'
+
+statementForLoop := 'for' identifier '=' expr '..' expr [',' expr] statement // TODO: come up with a couple more syntactic forms for this and choose the best
+
+// Definitions
+functionParameter := typeDecl identifier
+definitionFunction := 'func' identifier '(' functionParameter* ')' ['->' typeDecl] statementBlock
+definitionVariant := 'variant' identifier ['{' (integer | hexInt) (','( integer | hexInt))* '}']  ';'
+definitionTypeAlias := 'type' identifier = typeDecl // TODO: just an identifier?
