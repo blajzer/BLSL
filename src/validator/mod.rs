@@ -1,3 +1,9 @@
+// Copyright 2019-2020 Brett Lajzer
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 pub mod types;
 
 use types::*;
@@ -73,6 +79,34 @@ impl<'a> Validator<'a> {
 
 		let message = format!("Undeclared identifier {}", name);
 		return Err(ValidateError::new(pos.clone(), message));
+	}
+
+	fn find_function_type(&self, func_name: &str, args: &Vec<types::Expr>) -> Result<usize, types::ValidateError> {
+		let arg_types: Vec<(usize, usize)> = args.iter().map(|e| {
+			let type_index = e.get_type_index();
+			(type_index, self.get_base_type(type_index))
+		}).collect();
+
+		let candidate_types: Vec<(usize, &types::Type)> = self.types.iter().enumerate().filter(|(_, t)| {
+			if let types::Type::Function {name, argument_type_indices, ..} = t {
+				name == func_name && argument_type_indices.len() == args.len()
+			} else {
+				false
+			}
+		}).collect();
+
+		if candidate_types.len() > 0 {
+			// TODO: compare candidates and choose the best one
+
+			Ok(0)
+		} else {
+			Ok(0)
+			// TODO: error message
+			// let message = "Mismatched types between left and right sides of binary expression.".to_string();
+			// return Err(ValidateError::new(SourcePos::new(file, pos), message));
+		}
+
+		
 	}
 
 	fn validate_expr<'b>(&mut self, file: &'b str, expr: super::parser::types::Expr<'b>) -> Result<types::Expr<'b>, types::ValidateError<'b>> {
@@ -172,7 +206,8 @@ impl<'a> Validator<'a> {
 					pos: SourcePos::new(file, pos),
 					name: name,
 					args: new_args,
-					type_index: 0 // TODO: how?! should be return type?
+					function_type_index: 0, // TODO: this
+					return_type_index: 0 // TODO: how?! should be return type?
 				})
 			},
 			Expr::Ternary { pos, cond, success, failure } => {

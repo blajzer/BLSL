@@ -1,3 +1,9 @@
+// Copyright 2019-2020 Brett Lajzer
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 use super::super::parser::types::{BinaryOperator, UnaryOperator, Literal, Span};
 
 
@@ -121,7 +127,8 @@ pub enum Expr<'a> {
 		pos: SourcePos<'a>,
 		name: String,
 		args: Vec<Expr<'a>>,
-		type_index: usize
+		function_type_index: usize,
+		return_type_index: usize
 	},
 	Ternary {
 		pos: SourcePos<'a>,
@@ -142,7 +149,7 @@ impl<'a> Expr<'a> {
 		match self {
 			Expr::BinaryExpr { type_index, .. } => *type_index,
 			Expr::UnaryExpr { type_index, .. } => *type_index,
-			Expr::FunctionCall { type_index, .. } => *type_index,
+			Expr::FunctionCall { return_type_index, .. } => *return_type_index,
 			Expr::Ternary { type_index, .. } => *type_index,
 			Expr::Literal { type_index, .. } => *type_index
 		}

@@ -9,6 +9,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "blslang"
+version = "0.1.0"
+dependencies = [
+ "nom 5.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "nom_locate 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "bytecount"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -85,14 +93,6 @@ dependencies = [
 name = "semver-parser"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-
-[[package]]
-name = "shaderlang"
-version = "0.1.0"
-dependencies = [
- "nom 5.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "nom_locate 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
-]
 
 [[package]]
 name = "static_assertions"

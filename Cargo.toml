@@ -1,5 +1,5 @@
 [package]
-name = "shaderlang"
+name = "blslang"
 version = "0.1.0"
 authors = ["Brett Lajzer <brett@brettlajzer.com>"]
 edition = "2018"
