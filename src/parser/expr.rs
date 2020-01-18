@@ -158,6 +158,7 @@ pub fn parse_expression_member_access<'a>(input: Span<'a>) -> IResult<Span<'a>, 
 		Ok((i, (pos, op, inner)))
 	})(i)?;
 
+	// TODO: Handle method call to FunctionCall conversion
 	let mut output_value = first_term;
 	for (pos, op, inner) in operator_chain {
 		output_value =  Expr::BinaryExpr {pos: pos, op: op, lhs: Box::new(output_value), rhs: Box::new(inner)};

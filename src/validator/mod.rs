@@ -70,6 +70,15 @@ impl<'a> Validator<'a> {
 		}
 	}
 
+	// TODO: does this need to exist? Should qualified types even be concrete?
+	fn get_qualified_base_type(&self, t: usize) -> usize {
+		match self.types[t] {
+			Type::TypeAlias {alias_index, ..} => self.get_qualified_base_type(alias_index),
+			Type::ExternalType {type_index, ..} => self.get_qualified_base_type(type_index),
+			_ => t
+		}
+	}
+
 	fn get_variable_type<'b>(&self, name: &str, pos: &SourcePos<'b>) -> Result<usize, types::ValidateError<'b>> {
 		for scope in self.scopes.iter() {
 			if let Some(v) = scope.variables.iter().find(|v| v.name == name) {
@@ -81,38 +90,101 @@ impl<'a> Validator<'a> {
 		return Err(ValidateError::new(pos.clone(), message));
 	}
 
-	fn find_function_type(&self, func_name: &str, args: &Vec<types::Expr>) -> Result<usize, types::ValidateError> {
+	/// Returns (function type, function return type) or an error
+	fn find_function_type<'b>(&self, source_pos: SourcePos<'b>, func_name: &str, args: &Vec<types::Expr>) -> Result<(usize, usize), types::ValidateError<'b>> {
 		let arg_types: Vec<(usize, usize)> = args.iter().map(|e| {
 			let type_index = e.get_type_index();
-			(type_index, self.get_base_type(type_index))
+			(type_index, self.get_qualified_base_type(type_index))
 		}).collect();
 
 		let candidate_types: Vec<(usize, &types::Type)> = self.types.iter().enumerate().filter(|(_, t)| {
 			if let types::Type::Function {name, argument_type_indices, ..} = t {
-				name == func_name && argument_type_indices.len() == args.len()
+				if name == func_name && argument_type_indices.len() == args.len() {
+					argument_type_indices.iter().zip(arg_types.iter()).fold(true, |a, (t1, (_, t2))| a && (t1 == t2))
+				} else {
+					false
+				}
 			} else {
 				false
 			}
 		}).collect();
 
 		if candidate_types.len() > 0 {
-			// TODO: compare candidates and choose the best one
-
-			Ok(0)
+			// TODO: compare candidates and choose the best one versus choosing the first one
+			let (func_type_index, func_type) = candidate_types[0];
+			if let types::Type::Function {return_type_index, ..} = func_type {
+				Ok((func_type_index, *return_type_index))
+			} else {
+				unreachable!()
+			}
 		} else {
-			Ok(0)
-			// TODO: error message
-			// let message = "Mismatched types between left and right sides of binary expression.".to_string();
-			// return Err(ValidateError::new(SourcePos::new(file, pos), message));
+			let message = "No matching function declaration.".to_string();
+			return Err(ValidateError::new(source_pos, message));
+		}
+	}
+
+	fn validate_vector_swizzle<'b>(&mut self, expr: types::Expr<'b>, source_pos: SourcePos<'b>, dim: usize, base_type_index: usize, swizzle: &str) -> Result<types::Expr<'b>, types::ValidateError<'b>> {
+		let mut indices: Vec<u8> = Vec::new();
+
+		for (i, c) in swizzle.chars().enumerate() {
+			if i >= 4 {
+				let message = "Vector swizzle output is too wide".to_string();
+				return Err(ValidateError::new(source_pos, message));
+			}
+
+			match c {
+				'x' | 'r' => indices.push(0),
+				'y' | 'g' => indices.push(1),
+				'z' | 'b' => if dim >= 3 {
+						indices.push(2)
+					} else {
+						let message = "Invalid vector swizzle index".to_string();
+						return Err(ValidateError::new(source_pos, message));
+					},
+				'w' | 'a' => if dim >= 4 {
+						indices.push(3)
+					} else {
+						let message = "Invalid vector swizzle index".to_string();
+						return Err(ValidateError::new(source_pos, message));
+					},
+				_ => {
+					let message = "Invalid vector swizzle index".to_string();
+					return Err(ValidateError::new(source_pos, message));
+				}
+			}
 		}
 
-		
+		let output_type = if indices.len() == 1 {
+			base_type_index
+		} else {
+			self.find_or_add_type(types::Type::Vector { dim: indices.len(), base_type_index: base_type_index })
+		};
+
+		Ok(types::Expr::VectorSwizzleExpr {
+			pos: source_pos,
+			operand: Box::new(expr),
+			indices: indices,
+			type_index: output_type
+		})
 	}
 
 	fn validate_expr<'b>(&mut self, file: &'b str, expr: super::parser::types::Expr<'b>) -> Result<types::Expr<'b>, types::ValidateError<'b>> {
 		match expr {
 			Expr::BinaryExpr { pos, op, lhs, rhs } => {
 				let new_lhs = self.validate_expr(file, *lhs)?;
+				
+				// Handle vector swizzles. They're a special case of member access expression.
+				if op == BinaryOperator::MemberAccess {
+					if let &Type::Vector { dim, base_type_index } = &self.types[new_lhs.get_type_index()] {
+						if let &Expr::Literal {value: Literal::Identifier(swizzle), ..} = &rhs.as_ref() {
+							return self.validate_vector_swizzle(new_lhs, SourcePos::new(file, pos), dim, base_type_index, swizzle.as_str());
+						} else {
+							let message = "Invalid vector swizzle expression".to_string();
+							return Err(ValidateError::new(SourcePos::new(file, pos), message));
+						}
+					}
+				}
+				
 				let new_rhs = self.validate_expr(file, *rhs)?;
 
 				// The output type of the binary expression depends on the operator in question.
@@ -199,15 +271,14 @@ impl<'a> Validator<'a> {
 					new_args.push(converted_arg);
 				}
 
-				// TODO: lookup function call type
+				let (function_type, return_type) = self.find_function_type(SourcePos::new(file, pos), &name, &new_args)?;
 
-				// TODO: function calls
 				Ok(types::Expr::FunctionCall {
 					pos: SourcePos::new(file, pos),
 					name: name,
 					args: new_args,
-					function_type_index: 0, // TODO: this
-					return_type_index: 0 // TODO: how?! should be return type?
+					function_type_index: function_type,
+					return_type_index: return_type
 				})
 			},
 			Expr::Ternary { pos, cond, success, failure } => {

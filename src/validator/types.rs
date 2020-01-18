@@ -101,6 +101,7 @@ pub enum Type {
 		alias_index: usize
 	},
 	// TODO: resource types
+	// TODO: ExternalType is definitely the wrong way to handle this. Reconsider.
 	ExternalType {
 		name: String,
 		module_path: String,
@@ -121,6 +122,12 @@ pub enum Expr<'a> {
 		pos: SourcePos<'a>,
 		op: UnaryOperator,
 		operand: Box<Expr<'a>>,
+		type_index: usize
+	},
+	VectorSwizzleExpr {
+		pos: SourcePos<'a>,
+		operand: Box<Expr<'a>>,
+		indices: Vec<u8>,
 		type_index: usize
 	},
 	FunctionCall {
@@ -149,6 +156,7 @@ impl<'a> Expr<'a> {
 		match self {
 			Expr::BinaryExpr { type_index, .. } => *type_index,
 			Expr::UnaryExpr { type_index, .. } => *type_index,
+			Expr::VectorSwizzleExpr { type_index, .. } => *type_index,
 			Expr::FunctionCall { return_type_index, .. } => *return_type_index,
 			Expr::Ternary { type_index, .. } => *type_index,
 			Expr::Literal { type_index, .. } => *type_index
