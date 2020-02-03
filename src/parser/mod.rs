@@ -181,8 +181,11 @@ pub fn expression_to_string(e: &Expr) -> String {
 		Expr::FunctionCall {pos:_, name, args} => {
 			output.push_str(name.as_str());
 			output.push_str("(");
-			for e in args {
+			for (i, e) in args.iter().enumerate() {
 				output.push_str(expression_to_string(e).as_str());
+				if i != args.len() - 1 {
+					output.push_str(",");
+				}
 			}
 			output.push_str(")");
 		},

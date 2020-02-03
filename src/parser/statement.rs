@@ -75,7 +75,7 @@ fn parse_statement_variable_decl(input: Span) -> IResult<Span, Statement> {
 		pos: pos,
 		name: name,
 		var_type: decl,
-		initalization: maybe_init
+		initialization: maybe_init
 	};
 
 	Ok((i, decl))

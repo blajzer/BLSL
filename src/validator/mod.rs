@@ -8,12 +8,12 @@ pub mod types;
 
 use types::*;
 use super::builtin::*;
-use super::parser::types::{BinaryOperator, Expr, Literal, UnaryOperator};
+use super::parser::types::{AssignmentOperator, BinaryOperator, Expr, Literal, Statement, TypeDecl, UnaryOperator};
 
-pub struct Validator<'a> {
+pub struct Validator {
 	modules: Vec<Module>,
 	types: Vec<types::Type>,
-	scopes: Vec<Scope<'a>>
+	scopes: Vec<Scope>
 }
 
 struct Module {
@@ -22,16 +22,16 @@ struct Module {
 	type_offset: usize
 }
 
-struct Scope<'a> {
-	variables: Vec<Variable<'a>>
+struct Scope {
+	variables: Vec<Variable>
 }
 
-struct Variable<'a> {
-	name: &'a str,
+struct Variable {
+	name: String,
 	type_index: usize
 }
 
-impl<'a> Validator<'a> {
+impl Validator {
 	pub fn new() -> Self {
 		let mut validator = Validator {
 			modules: Vec::new(),
@@ -80,7 +80,7 @@ impl<'a> Validator<'a> {
 	}
 
 	fn get_variable_type<'b>(&self, name: &str, pos: &SourcePos<'b>) -> Result<usize, types::ValidateError<'b>> {
-		for scope in self.scopes.iter() {
+		for scope in self.scopes.iter().rev() {
 			if let Some(v) = scope.variables.iter().find(|v| v.name == name) {
 				return Ok(v.type_index);
 			}
@@ -88,6 +88,24 @@ impl<'a> Validator<'a> {
 
 		let message = format!("Undeclared identifier {}", name);
 		return Err(ValidateError::new(pos.clone(), message));
+	}
+
+	fn resolve_type_decl<'b>(&mut self, decl: &TypeDecl<'b>) -> Result<usize, types::ValidateError<'b>> {
+		// TODO: implement this		
+		Ok(0)
+	}
+
+	fn add_variable_to_current_scope<'b>(&mut self, name: &str, type_index: usize, pos: &SourcePos<'b>) -> Result<(), types::ValidateError<'b>> {
+		if let Some(scope) = self.scopes.last_mut() {
+			if let Some(v) = scope.variables.iter().find(|v| v.name == name) {
+				let message = format!("Variable already exists in current scope {}", name);
+				return Err(ValidateError::new(pos.clone(), message));
+			} else {
+				scope.variables.push(Variable { name: name.to_string(), type_index: type_index });
+			}
+		}
+
+		Ok(())
 	}
 
 	/// Returns (function type, function return type) or an error
@@ -227,8 +245,23 @@ impl<'a> Validator<'a> {
 						BOOL_INDEX
 					},
 					BinaryOperator::MemberAccess => {
-						// TODO: implement
-						VOID_INDEX
+						if let &types::Expr::Literal {value: Literal::Identifier(ref identifier), ..} = &new_rhs {
+							let lhs_type = &self.types[self.get_base_type(new_lhs.get_type_index())];
+							if let &types::Type::Struct {ref fields, ..} = lhs_type {
+								if let Some(field) = fields.iter().find(|f| f.name == *identifier) {
+									field.field_type_index
+								} else {
+									let message = "Invalid member access, field not found in struct.".to_string();
+									return Err(ValidateError::new(SourcePos::new(file, pos), message));
+								}
+							} else {
+								let message = "Invalid member access, struct expected on left-hand-side.".to_string();
+								return Err(ValidateError::new(SourcePos::new(file, pos), message));
+							}
+						} else {
+							let message = "Invalid member access, identifier expected on right-hand-side.".to_string();
+							return Err(ValidateError::new(SourcePos::new(file, pos), message));
+						}
 					},
 					BinaryOperator::ArrayAccess => {
 						let lhs_type = &self.types[self.get_base_type(new_lhs.get_type_index())];
@@ -324,6 +357,183 @@ impl<'a> Validator<'a> {
 					pos: new_pos,
 					value: value,
 					type_index: type_index
+				})
+			}
+		}
+	}
+
+	fn validate_lvalue<'b>(&self, file: &'b str, lhs: &super::parser::types::Expr<'b>) -> Result<(), types::ValidateError<'b>> {
+		match lhs {
+			Expr::BinaryExpr { pos, op, lhs, rhs } => {
+				match op {
+					BinaryOperator::ArrayAccess | BinaryOperator::MemberAccess=> {
+						return self.validate_lvalue(file, &lhs);
+					},
+					_ => {
+						let message = format!("The {} operator cannot appear in an lvalue expression. Only member access and array access are valid.", op.to_string());
+						return Err(ValidateError::new(SourcePos::new(file, pos.clone()), message));
+					}
+				};
+			},
+			Expr::Literal { pos, value } => {
+				if let Literal::Identifier(_) = value {
+				} else {
+					let message = "Expected identifier.".to_string();
+					return Err(ValidateError::new(SourcePos::new(file, pos.clone()), message));
+				}
+			},
+			_ => {
+				let message = "Invalid expression in lvalue.".to_string();
+				return Err(ValidateError::new(SourcePos::new(file, lhs.get_pos().clone()), message));
+			}
+		};
+
+		Ok(())
+	}
+
+	fn validate_statement<'b>(&mut self, file: &'b str, statement: super::parser::types::Statement<'b>, is_loop: bool, return_type: usize) -> Result<types::Statement<'b>, types::ValidateError<'b>> {
+		match statement {
+			Statement::Block { pos, body } => {
+				self.scopes.push(Scope { variables: Vec::new() });
+
+				let mut new_body = Vec::new();
+				for s in body {
+					let new_s = self.validate_statement(file, s, is_loop, return_type)?;
+					new_body.push(new_s);
+				}
+
+				self.scopes.pop();
+
+				Ok(types::Statement::Block {
+					pos: SourcePos::new(file, pos),
+					body: new_body
+				})
+			},
+			Statement::Expr { pos, expr } => {
+				let new_expr = self.validate_expr(file, expr)?;
+
+				Ok(types::Statement::Expr {
+					pos: SourcePos::new(file, pos),
+					expr: new_expr
+				})
+			},
+			Statement::Assignment { pos, lhs, rhs, op } => {
+				self.validate_lvalue(file, &lhs)?;
+				let new_lhs = self.validate_expr(file, lhs)?;
+				let new_rhs = self.validate_expr(file, rhs)?;
+
+				Ok(types::Statement::Assignment {
+					pos: SourcePos::new(file, pos),
+					lhs: new_lhs,
+					rhs: new_rhs,
+					op: op
+				})
+			},
+			Statement::If { pos, cond, if_body, else_body } => {
+				let new_cond = self.validate_expr(file, cond)?;
+				let new_if_body = self.validate_statement(file, *if_body, is_loop, return_type)?;
+				let new_else_body = if let Some(else_body) = else_body {
+					let new_else_body = self.validate_statement(file, *else_body, is_loop, return_type)?;
+					Some(Box::new(new_else_body))
+				} else {
+					None
+				};
+
+				Ok(types::Statement::If {
+					pos: SourcePos::new(file, pos),
+					cond: new_cond,
+					if_body: Box::new(new_if_body),
+					else_body: new_else_body
+				})
+			},
+			Statement::VariableDeclaration { pos, name, var_type, initialization } => {
+				let new_pos = SourcePos::new(file, pos);
+
+				let var_type_index = self.resolve_type_decl(&var_type)?;
+				self.add_variable_to_current_scope(name.as_str(), var_type_index, &new_pos)?;
+
+				let new_initialization = if let Some(initialization) = initialization {
+					let new_initialization = self.validate_expr(file, initialization)?;
+					Some(new_initialization)
+				} else {
+					None
+				};
+
+				Ok(types::Statement::VariableDeclaration {
+					pos: new_pos,
+					name: name.clone(),
+					type_index: var_type_index,
+					initialization: new_initialization
+				})
+			},
+			Statement::ForLoop { pos, initialization, cond, update, body } => {
+				// TODO: validate that init is a declaration, that update is an assignment, and body is a block
+				let new_initialization = self.validate_statement(file, *initialization, is_loop, return_type)?;
+				let new_cond = self.validate_expr(file, cond)?;
+				let new_update = self.validate_statement(file, *update, is_loop, return_type)?;
+				let new_body = self.validate_statement(file, *body, true, return_type)?;
+				
+				Ok(types::Statement::ForLoop {
+					pos: SourcePos::new(file, pos),
+					initialization: Box::new(new_initialization),
+					cond: new_cond,
+					update: Box::new(new_update),
+					body: Box::new(new_body)
+				})
+			},
+			Statement::WhileLoop { pos, cond, body } => {
+				// TODO: validate body is a block
+				let new_cond = self.validate_expr(file, cond)?;
+				let new_body = self.validate_statement(file, *body, true, return_type)?;
+				
+				Ok(types::Statement::WhileLoop {
+					pos: SourcePos::new(file, pos),
+					cond: new_cond,
+					body: Box::new(new_body)
+				})
+			},
+			Statement::Return { pos, expr } => {
+				let new_expr = if let Some(expr) = expr {
+					let new_expr = self.validate_expr(file, expr)?;
+					if new_expr.get_type_index() != return_type {
+						// TODO: better message here
+						let message = "Mismatched return type".to_string();
+						return Err(ValidateError::new(SourcePos::new(file, pos), message));
+					}
+
+					Some(new_expr)
+				} else {
+					if return_type != VOID_INDEX {
+						let message = "Invalid return type, expected void.".to_string();
+						return Err(ValidateError::new(SourcePos::new(file, pos), message));
+					}
+
+					None
+				};
+
+				Ok(types::Statement::Return {
+					pos: SourcePos::new(file, pos),
+					expr: new_expr
+				})
+			},
+			Statement::Break { pos } => {
+				if !is_loop {
+					let message = "Break statements can only appear inside of a loop.".to_string();
+					return Err(ValidateError::new(SourcePos::new(file, pos), message));
+				}
+
+				Ok(types::Statement::Break {
+					pos: SourcePos::new(file, pos)
+				})
+			},
+			Statement::Continue { pos } => {
+				if !is_loop {
+					let message = "Continue statements can only appear inside of a loop.".to_string();
+					return Err(ValidateError::new(SourcePos::new(file, pos), message));
+				}
+
+				Ok(types::Statement::Continue {
+					pos: SourcePos::new(file, pos)
 				})
 			}
 		}

@@ -67,20 +67,30 @@ pub enum Statement<'a> {
 		pos: Span<'a>,
 		name: String,
 		var_type: TypeDecl<'a>,
-		initalization: Option<Expr<'a>>
+		initialization: Option<Expr<'a>>
 	},
 	ForLoop {
 		pos: Span<'a>,
-		initalization: Box<Statement<'a>>,
+		initialization: Box<Statement<'a>>,
 		cond: Expr<'a>,
-		update: Box<Statement<'a>>
+		update: Box<Statement<'a>>,
+		body: Box<Statement<'a>>
+	},
+	WhileLoop {
+		pos: Span<'a>,
+		cond: Expr<'a>,
+		body: Box<Statement<'a>>
 	},
 	Return {
 		pos: Span<'a>,
 		expr: Option<Expr<'a>>
 	},
-	Break {pos: Span<'a>},
-	Continue {pos: Span<'a>}
+	Break {
+		pos: Span<'a>
+	},
+	Continue {
+		pos: Span<'a>
+	}
 }
 
 #[derive(Debug, Clone)]
@@ -126,6 +136,18 @@ pub enum Expr<'a> {
 	}
 }
 
+impl<'a> Expr<'a> {
+	pub fn get_pos(&self) -> &Span<'a> {
+		match self {
+			Expr::BinaryExpr { pos, .. } => pos,
+			Expr::UnaryExpr { pos, .. } => pos,
+			Expr::FunctionCall { pos, .. } => pos,
+			Expr::Ternary { pos, .. } => pos,
+			Expr::Literal { pos, .. } => pos
+		}
+	}
+}
+
 #[derive(Debug)]
 pub enum Literal {
 	Int(i64),
@@ -157,6 +179,35 @@ pub enum BinaryOperator {
 	GreaterThanEqual,
 	MemberAccess,
 	ArrayAccess
+}
+
+impl std::fmt::Display for BinaryOperator {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "{}",
+			match self {
+				Add => "add",
+				Subtract => "subtract",
+				Multiply => "multiply",
+				Divide => "divide",
+				Modulus => "modulus",
+				And => "and",
+				Or => "or",
+				BitAnd => "bitwise and",
+				BitOr => "bitwise or",
+				BitXor => "bitwise exclusive-or",
+				BitShiftLeft => "bit shift left",
+				BitShiftRight => "bit shift right",
+				Equal => "equal",
+				NotEqual => "not equal",
+				LessThan => "less than",
+				LessThanEqual => "less than or equal",
+				GreaterThan => "greater than",
+				GreaterThanEqual => "greater than or equal",
+				MemberAccess => "member access",
+				ArrayAccess => "array access"
+			}
+		)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

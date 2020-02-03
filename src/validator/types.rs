@@ -4,7 +4,13 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use super::super::parser::types::{BinaryOperator, UnaryOperator, Literal, Span};
+use super::super::parser::types::{
+	AssignmentOperator,
+	BinaryOperator,
+	UnaryOperator,
+	Literal,
+	Span
+};
 
 
 #[derive(Debug, Clone)]
@@ -51,14 +57,14 @@ pub enum BasicType {
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct StructField {
-	name: String,
-	field_type_index: usize
+	pub name: String,
+	pub field_type_index: usize
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct EnumValue {
-	name: String,
-	value: i32
+	pub name: String,
+	pub value: i32
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -148,6 +154,58 @@ pub enum Expr<'a> {
 		pos: SourcePos<'a>,
 		value: Literal,
 		type_index: usize
+	}
+}
+
+#[derive(Debug)]
+pub enum Statement<'a> {
+	Block {
+		pos: SourcePos<'a>,
+		body: Vec<Statement<'a>>
+	},
+	Expr {
+		pos: SourcePos<'a>,
+		expr: Expr<'a>
+	},
+	Assignment {
+		pos: SourcePos<'a>,
+		lhs: Expr<'a>,
+		rhs: Expr<'a>,
+		op: AssignmentOperator
+	},
+	If {
+		pos: SourcePos<'a>,
+		cond: Expr<'a>,
+		if_body: Box<Statement<'a>>,
+		else_body: Option<Box<Statement<'a>>>
+	},
+	VariableDeclaration {
+		pos: SourcePos<'a>,
+		name: String,
+		type_index: usize,
+		initialization: Option<Expr<'a>>
+	},
+	ForLoop {
+		pos: SourcePos<'a>,
+		initialization: Box<Statement<'a>>,
+		cond: Expr<'a>,
+		update: Box<Statement<'a>>,
+		body: Box<Statement<'a>>
+	},
+	WhileLoop {
+		pos: SourcePos<'a>,
+		cond: Expr<'a>,
+		body: Box<Statement<'a>>
+	},
+	Return {
+		pos: SourcePos<'a>,
+		expr: Option<Expr<'a>>
+	},
+	Break {
+		pos: SourcePos<'a>
+	},
+	Continue {
+		pos: SourcePos<'a>
 	}
 }
 

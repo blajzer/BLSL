@@ -12,7 +12,7 @@ use nom::{
 	branch::alt,
 	bytes::complete::tag,
 	character::complete::{char, multispace0},
-	combinator::{cut, map, opt, value},
+	combinator::{cut, map, not, opt, value},
 	multi::many0,
 	sequence::{delimited, preceded}
 };
@@ -28,7 +28,7 @@ macro_rules! parse_single_operator {
 
 			let (i, operator_chain) = many0(|input: Span| {
 				let (i, pos) = preceded(multispace0, position)(input)?;
-				let (i, _) = tag($op_str)(i)?;
+				let (i, _) = $op_str(i)?;
 
 				let (i, inner) = preceded(multispace0, cut($recurse))(i)?;
 
@@ -158,10 +158,21 @@ pub fn parse_expression_member_access<'a>(input: Span<'a>) -> IResult<Span<'a>, 
 		Ok((i, (pos, op, inner)))
 	})(i)?;
 
-	// TODO: Handle method call to FunctionCall conversion
 	let mut output_value = first_term;
 	for (pos, op, inner) in operator_chain {
-		output_value =  Expr::BinaryExpr {pos: pos, op: op, lhs: Box::new(output_value), rhs: Box::new(inner)};
+		// If the right hand side of the member access is a function call, desugar to put the current
+		// left hand side as the first argument of a function call (method call)
+		output_value = if op == BinaryOperator::MemberAccess {
+			match inner {
+				Expr::FunctionCall { pos, name, mut args } => {
+					args.insert(0, output_value);
+					Expr::FunctionCall { pos: pos, name: name, args: args }
+				},
+				_ => Expr::BinaryExpr {pos: pos, op: op, lhs: Box::new(output_value), rhs: Box::new(inner)}
+			}
+		} else {
+			Expr::BinaryExpr {pos: pos, op: op, lhs: Box::new(output_value), rhs: Box::new(inner)}
+		}
 	}
 
 	Ok((i, output_value))
@@ -169,7 +180,7 @@ pub fn parse_expression_member_access<'a>(input: Span<'a>) -> IResult<Span<'a>, 
 
 fn parse_expression_unary(input: Span) -> IResult<Span, Expr> {
 	let (i, pos) = preceded(multispace0, position)(input)?;
-	let (i, leading_op) = opt(alt((
+	let (i, leading_ops) = many0(alt((
 		value(UnaryOperator::Negate, char('-')),
 		value(UnaryOperator::Not, char('!')),
 		value(UnaryOperator::BitNot, char('~'))
@@ -177,8 +188,15 @@ fn parse_expression_unary(input: Span) -> IResult<Span, Expr> {
 
 	let (i, term) = parse_expression_member_access(i)?;
 
-	if let Some(op) = leading_op {
-		Ok((i, Expr::UnaryExpr {pos: pos, op: op, operand: Box::new(term)}))
+	if leading_ops.len() > 0 {
+		let mut ops_iter = leading_ops.iter().rev();
+		let mut unary_expr = Expr::UnaryExpr {pos: pos, op: ops_iter.next().unwrap().clone(), operand: Box::new(term)};
+
+		for op in ops_iter {
+			unary_expr = Expr::UnaryExpr {pos: pos, op: op.clone(), operand: Box::new(unary_expr)};
+		}
+
+		Ok((i, unary_expr))
 	} else {
 		Ok((i, term))
 	}
@@ -222,11 +240,11 @@ parse_multi_operator!(
 	("==", BinaryOperator::Equal)
 );
 
-parse_single_operator!(parse_expression_bitwise_and, parse_expression_equality, "&", BinaryOperator::BitAnd);
-parse_single_operator!(parse_expression_bitwise_xor, parse_expression_bitwise_and, "^", BinaryOperator::BitXor);
-parse_single_operator!(parse_expression_bitwise_or, parse_expression_bitwise_xor, "|", BinaryOperator::BitOr);
-parse_single_operator!(parse_expression_logical_and, parse_expression_bitwise_or, "&&", BinaryOperator::And);
-parse_single_operator!(parse_expression_logical_or, parse_expression_logical_and, "||", BinaryOperator::Or);
+parse_single_operator!(parse_expression_bitwise_and, parse_expression_equality, preceded(not(tag("&&")), tag("&")), BinaryOperator::BitAnd);
+parse_single_operator!(parse_expression_bitwise_xor, parse_expression_bitwise_and, tag("^"), BinaryOperator::BitXor);
+parse_single_operator!(parse_expression_bitwise_or, parse_expression_bitwise_xor, preceded(not(tag("||")), tag("|")), BinaryOperator::BitOr);
+parse_single_operator!(parse_expression_logical_and, parse_expression_bitwise_or, tag("&&"), BinaryOperator::And);
+parse_single_operator!(parse_expression_logical_or, parse_expression_logical_and, tag("||"), BinaryOperator::Or);
 
 fn parse_expression_ternary(input: Span) -> IResult<Span, Expr> {
 	let (i, first_term) = preceded(multispace0, parse_expression_logical_or)(input)?;
