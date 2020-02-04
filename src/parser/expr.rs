@@ -11,7 +11,7 @@ use nom::{
 	IResult,
 	branch::alt,
 	bytes::complete::tag,
-	character::complete::{char, multispace0},
+	character::complete::char,
 	combinator::{cut, map, not, opt, value},
 	multi::many0,
 	sequence::{delimited, preceded}
@@ -24,13 +24,13 @@ use nom_locate::position;
 macro_rules! parse_single_operator {
 	($name:ident, $recurse:ident, $op_str:expr, $op_type:expr $(, $visibility:ident)?) => {
 		$($visibility)? fn $name(input: Span) -> IResult<Span, Expr> {
-			let (i, first_term) = preceded(multispace0, $recurse)(input)?;
+			let (i, first_term) = preceded(whitespace0, $recurse)(input)?;
 
 			let (i, operator_chain) = many0(|input: Span| {
-				let (i, pos) = preceded(multispace0, position)(input)?;
+				let (i, pos) = preceded(whitespace0, position)(input)?;
 				let (i, _) = $op_str(i)?;
 
-				let (i, inner) = preceded(multispace0, cut($recurse))(i)?;
+				let (i, inner) = preceded(whitespace0, cut($recurse))(i)?;
 
 				Ok((i, (pos, inner)))
 			})(i)?;
@@ -48,17 +48,17 @@ macro_rules! parse_single_operator {
 macro_rules! parse_multi_operator {
 	($name:ident, $recurse:ident, $(($op_str:expr, $op_type:expr)),+ $(, $visibility:ident)?) => {
 		$($visibility)? fn $name(input: Span) -> IResult<Span, Expr> {
-			let (i, first_term) = preceded(multispace0, $recurse)(input)?;
+			let (i, first_term) = preceded(whitespace0, $recurse)(input)?;
 
 			let (i, operator_chain) = many0(|input: Span| {
-				let (i, pos) = preceded(multispace0, position)(input)?;
+				let (i, pos) = preceded(whitespace0, position)(input)?;
 				let (i, op) = alt((
 					$(
-						value($op_type, tag($op_str)),
+						value($op_type, $op_str),
 					)+
 				))(i)?;
 
-				let (i, inner) = preceded(multispace0, cut($recurse))(i)?;
+				let (i, inner) = preceded(whitespace0, cut($recurse))(i)?;
 
 				Ok((i, (pos, op, inner)))
 			})(i)?;
@@ -94,14 +94,14 @@ fn parse_literal(input: Span) -> IResult<Span, Literal> {
 }
 
 fn parse_function_call_arguments(input: Span) -> IResult<Span, Vec<Expr>> {
-	let (i, first_arg) = preceded(multispace0, parse_expression)(input)?;
+	let (i, first_arg) = preceded(whitespace0, parse_expression)(input)?;
 
 	let mut result = Vec::new();
 	result.push(first_arg);
 
 	let (i, mut other_args) = many0(|input: Span| {
-		let (i, _) = preceded(multispace0, char(','))(input)?;
-		let (i, arg) = preceded(multispace0, cut(parse_expression))(i)?;
+		let (i, _) = preceded(whitespace0, char(','))(input)?;
+		let (i, arg) = preceded(whitespace0, cut(parse_expression))(i)?;
 
 		Ok((i, arg))
 	})(i)?;
@@ -115,7 +115,7 @@ fn parse_function_call(input: Span) -> IResult<Span, Expr> {
 	let (i, pos) = position(input)?;
 	let (i, func_name) = parse_identifier(i)?;
 
-	let (i, arguments) = preceded(multispace0, delimited(char('('), opt(parse_function_call_arguments), preceded(multispace0, cut(char(')')))))(i)?;
+	let (i, arguments) = preceded(whitespace0, delimited(char('('), opt(parse_function_call_arguments), preceded(whitespace0, cut(char(')')))))(i)?;
 
 	let final_args = if let Some(args_inner) = arguments {
 		args_inner
@@ -127,30 +127,30 @@ fn parse_function_call(input: Span) -> IResult<Span, Expr> {
 }
 
 fn parse_expression_lowest(input: Span) -> IResult<Span, Expr> {
-	let (i, pos) = preceded(multispace0, position)(input)?;
+	let (i, pos) = preceded(whitespace0, position)(input)?;
 	let (i, term) = alt((
 		parse_function_call,
 		map(parse_literal, |l| Expr::Literal{pos: pos, value: l}),
-		delimited(char('('), parse_expression, preceded(multispace0, cut(char(')'))))
+		delimited(char('('), parse_expression, preceded(whitespace0, cut(char(')'))))
 	))(i)?;
 
 	Ok((i, term))
 }
 
 pub fn parse_expression_member_access<'a>(input: Span<'a>) -> IResult<Span<'a>, Expr> {
-	let (i, first_term) = preceded(multispace0, parse_expression_lowest)(input)?;
+	let (i, first_term) = preceded(whitespace0, parse_expression_lowest)(input)?;
 
 	let (i, operator_chain) = many0(|input: Span<'a>| {
-		let (i, pos) = preceded(multispace0, position)(input)?;
+		let (i, pos) = preceded(whitespace0, position)(input)?;
 		let (i, (op, inner)) = alt((
 			|input: Span<'a>| {
 				let (i, _) = tag(".")(input)?;
-				let (i, inner) = preceded(multispace0, cut(parse_expression_lowest))(i)?;
+				let (i, inner) = preceded(whitespace0, cut(parse_expression_lowest))(i)?;
 
 				Ok((i, (BinaryOperator::MemberAccess, inner)))
 			},
 			|input: Span<'a>| {
-				let (i, inner) = delimited(char('['), parse_expression, preceded(multispace0, cut(char(']'))))(input)?;
+				let (i, inner) = delimited(char('['), parse_expression, preceded(whitespace0, cut(char(']'))))(input)?;
 				Ok((i, (BinaryOperator::ArrayAccess, inner)))
 			},
 		))(i)?;
@@ -179,7 +179,7 @@ pub fn parse_expression_member_access<'a>(input: Span<'a>) -> IResult<Span<'a>, 
 }
 
 fn parse_expression_unary(input: Span) -> IResult<Span, Expr> {
-	let (i, pos) = preceded(multispace0, position)(input)?;
+	let (i, pos) = preceded(whitespace0, position)(input)?;
 	let (i, leading_ops) = many0(alt((
 		value(UnaryOperator::Negate, char('-')),
 		value(UnaryOperator::Not, char('!')),
@@ -205,39 +205,39 @@ fn parse_expression_unary(input: Span) -> IResult<Span, Expr> {
 parse_multi_operator!(
 	parse_expression_multiply,
 	parse_expression_unary,
-	("*", BinaryOperator::Multiply),
-	("/", BinaryOperator::Divide),
-	("%", BinaryOperator::Modulus)
+	(tag("*"), BinaryOperator::Multiply),
+	(preceded(not(alt((tag("//"), tag("/*")))), tag("/")), BinaryOperator::Divide),
+	(tag("%"), BinaryOperator::Modulus)
 );
 
 parse_multi_operator!(
 	parse_expression_add,
 	parse_expression_multiply,
-	("+", BinaryOperator::Add),
-	("-", BinaryOperator::Subtract)
+	(tag("+"), BinaryOperator::Add),
+	(tag("-"), BinaryOperator::Subtract)
 );
 
 parse_multi_operator!(
 	parse_expression_bitshift,
 	parse_expression_add,
-	("<<", BinaryOperator::BitShiftLeft),
-	(">>", BinaryOperator::BitShiftRight)
+	(tag("<<"), BinaryOperator::BitShiftLeft),
+	(tag(">>"), BinaryOperator::BitShiftRight)
 );
 
 parse_multi_operator!(
 	parse_expression_compare,
 	parse_expression_bitshift,
-	("<=", BinaryOperator::LessThanEqual),
-	("<", BinaryOperator::LessThan),
-	(">=", BinaryOperator::GreaterThanEqual),
-	(">", BinaryOperator::GreaterThan)
+	(tag("<="), BinaryOperator::LessThanEqual),
+	(tag("<"), BinaryOperator::LessThan),
+	(tag(">="), BinaryOperator::GreaterThanEqual),
+	(tag(">"), BinaryOperator::GreaterThan)
 );
 
 parse_multi_operator!(
 	parse_expression_equality,
 	parse_expression_compare,
-	("!=", BinaryOperator::NotEqual),
-	("==", BinaryOperator::Equal)
+	(tag("!="), BinaryOperator::NotEqual),
+	(tag("=="), BinaryOperator::Equal)
 );
 
 parse_single_operator!(parse_expression_bitwise_and, parse_expression_equality, preceded(not(tag("&&")), tag("&")), BinaryOperator::BitAnd);
@@ -247,15 +247,15 @@ parse_single_operator!(parse_expression_logical_and, parse_expression_bitwise_or
 parse_single_operator!(parse_expression_logical_or, parse_expression_logical_and, tag("||"), BinaryOperator::Or);
 
 fn parse_expression_ternary(input: Span) -> IResult<Span, Expr> {
-	let (i, first_term) = preceded(multispace0, parse_expression_logical_or)(input)?;
+	let (i, first_term) = preceded(whitespace0, parse_expression_logical_or)(input)?;
 
 	let (i, ternary_terms) = opt(|input: Span| {
 		// Note: C/C++ parse the middle expression as though it is in parenthesis, so recurse from the top here
-		let (i, pos) = preceded(multispace0, position)(input)?;
+		let (i, pos) = preceded(whitespace0, position)(input)?;
 		let (i, _) = char('?')(i)?;
 		let (i, if_term) = cut(parse_expression)(i)?;
 
-		let (i, _) = preceded(multispace0, cut(char(':')))(i)?;
+		let (i, _) = preceded(whitespace0, cut(char(':')))(i)?;
 		let (i, else_term) = cut(parse_expression_logical_or)(i)?;
 
 		Ok((i, (pos, if_term, else_term)))

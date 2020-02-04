@@ -1,6 +1,6 @@
 // Primitive expression constructs
 // These don't allow spaces, but everything else does
-identifier := <alpha>+[<alphanum>*] // TODO: underscores
+identifier := ('_'|<alpha>)+[('_'|<alphanum>)*]
 double := <digit>+'.'<digit>+['e'['+'|'-']<digit>+]
 hexint := '0x'<hexdigit>+
 integer := <digit>+

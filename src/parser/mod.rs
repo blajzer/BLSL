@@ -20,30 +20,48 @@ use nom::{
 	bytes::complete::tag,
 	character::complete::{
 		alpha1,
-		alphanumeric0,
+		alphanumeric1,
+		anychar,
 		char,
 		digit1,
 		hex_digit1,
+		line_ending,
 		multispace0,
 		multispace1},
 	combinator::{cut, opt},
 	error::{ErrorKind, ParseError},
 	Err::Error,
-	sequence::terminated
+	multi::{fold_many0, fold_many1, many_till},
+	sequence::{preceded, terminated}
 };
 use nom_locate::position;
 
-// todo: underscores
 fn parse_identifier(input: Span) -> IResult<Span, String> {
-	let (i, first) = alpha1(input)?;
-	let (i, second) = opt(alphanumeric0)(i)?;
+	let (i, first) = fold_many1(alt((alpha1, tag("_"))), String::new(), |mut acc, s: Span| { acc.push_str(s.fragment); acc })(input)?;
+	let (i, second) = fold_many0(alt((alphanumeric1, tag("_"))), first, |mut acc, s: Span| { acc.push_str(s.fragment); acc })(i)?;
 
-	let mut result = first.to_string();
-	if let Some(second_inner) = second {
-		result.push_str(second_inner.fragment);
+	Ok((i, second))
+}
+
+fn consume_comment(input: Span) -> IResult<Span, ()> {
+	let single_line_comment = preceded(tag("//"), many_till(anychar, line_ending));
+	let multi_line_comment = preceded(tag("/*"), many_till(anychar, tag("*/")));
+	
+	let (i, _) = opt(alt((single_line_comment, multi_line_comment)))(input)?;
+	Ok((i, ()))
+}
+
+fn whitespace0(input: Span) -> IResult<Span, ()> {
+	let mut old_i = input;
+	loop {
+		let (i, _) = multispace0(old_i)?;
+		let (i, _) = consume_comment(i)?;
+		if i == old_i {
+			return Ok((i, ()));
+		} else {
+			old_i = i;
+		}
 	}
-
-	Ok((i, result))
 }
 
 enum SomeInt {
