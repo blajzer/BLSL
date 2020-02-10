@@ -76,7 +76,12 @@ macro_rules! parse_multi_operator {
 fn parse_literal(input: Span) -> IResult<Span, Literal> {
 	alt((
 		map(parse_double, |f: f64| Literal::Float(f)),
-		map(parse_hex, |u: u64| Literal::UInt(u)),
+		map(parse_hex, |s: SomeInt| {
+			match s {
+				SomeInt::I64(i) => Literal::Int(i),
+				SomeInt::U64(u) => Literal::UInt(u),
+			}
+		}),
 		map(parse_integer, |s: SomeInt| {
 			match s {
 				SomeInt::I64(i) => Literal::Int(i),

@@ -10,6 +10,12 @@ use types::*;
 use super::builtin::*;
 use super::parser::types::{AssignmentOperator, BinaryOperator, Expr, Literal, Statement, TypeDecl, UnaryOperator};
 
+macro_rules! is_variant {
+	($value:expr, $variant:path) => {
+		if let $variant {..} = $value { true } else { false }
+	}
+}
+
 pub struct Validator {
 	modules: Vec<Module>,
 	types: Vec<types::Type>,
@@ -467,7 +473,13 @@ impl Validator {
 				})
 			},
 			Statement::ForLoop { pos, initialization, cond, update, body } => {
-				// TODO: validate that init is a declaration, that update is an assignment, and body is a block
+				// TODO: validate that init is a declaration and that update is an assignment
+
+				if !is_variant!(*body, Statement::Block) {
+					let message = "Expected block statement as body of for loop".to_string();
+					return Err(ValidateError::new(SourcePos::new(file, pos), message));
+				}
+
 				let new_initialization = self.validate_statement(file, *initialization, is_loop, return_type)?;
 				let new_cond = self.validate_expr(file, cond)?;
 				let new_update = self.validate_statement(file, *update, is_loop, return_type)?;
@@ -482,7 +494,11 @@ impl Validator {
 				})
 			},
 			Statement::WhileLoop { pos, cond, body } => {
-				// TODO: validate body is a block
+				if !is_variant!(*body, Statement::Block) {
+					let message = "Expected block statement as body of while loop".to_string();
+					return Err(ValidateError::new(SourcePos::new(file, pos), message));
+				}
+
 				let new_cond = self.validate_expr(file, cond)?;
 				let new_body = self.validate_statement(file, *body, true, return_type)?;
 				

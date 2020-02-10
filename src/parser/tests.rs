@@ -6,6 +6,8 @@
 
 use super::*;
 use super::expr::*;
+use super::definition::*;
+use super::statement::*;
 use super::types::*;
 
 
@@ -18,6 +20,27 @@ fn expression_parse_test(input: &str, expected: &str) {
 		panic!("Failed to parse expression: \"{}\"\nDebug output: {:?}\n", input, parsed);
 	}
 }
+
+fn statement_parse_test(input: &str, expected: &str) {
+	let parsed = parse_statement(Span::new(input));
+	if let Ok((_, expr)) = parsed {
+		let output = statement_to_string(&expr);
+		assert_eq!(expected, output, "Parsed statement \"{}\" doesn't match expected \"{}\"", output, expected);
+	} else {
+		panic!("Failed to parse statement: \"{}\"\nDebug output: {:?}\n", input, parsed);
+	}
+}
+
+fn definition_parse_test(input: &str, expected: &str) {
+	let parsed = parse_definition(Span::new(input));
+	if let Ok((_, expr)) = parsed {
+		let output = definition_to_string(&expr);
+		assert_eq!(expected, output, "Parsed definition \"{}\" doesn't match expected \"{}\"", output, expected);
+	} else {
+		panic!("Failed to parse definition: \"{}\"\nDebug output: {:?}\n", input, parsed);
+	}
+}
+
 
 #[test]
 fn expr_literals() {
@@ -34,6 +57,10 @@ fn expr_literals() {
 	expression_parse_test("_a1b2c34", "_a1b2c34");
 	expression_parse_test("abc_a1b_2c34", "abc_a1b_2c34");
 }
+
+//
+// Expression Tests
+//
 
 #[test]
 fn expr_comments() {
@@ -196,4 +223,84 @@ fn expr_ternary() {
 fn expr_precedence() {
 	// precedence and associativity
 	expression_parse_test("a.b.c.d.e.w[5]", "((((((a.b).c).d).e).w)[5])");
+}
+
+
+//
+// Statement Tests
+//
+
+#[test]
+fn statement_expression() {
+	statement_parse_test("5;", "5;");
+	statement_parse_test("foo (a,b,c);", "foo(a,b,c);");
+	statement_parse_test("x + y ;", "(x+y);");
+}
+
+#[test]
+fn statement_block() {
+	statement_parse_test("{}", "{}");
+	statement_parse_test("{{{}}}", "{{{}}}");
+	statement_parse_test("{
+		x + y;
+		foo(a,b,c);
+	}",
+	"{(x+y);foo(a,b,c);}");	
+}
+
+#[test]
+fn statement_assign() {
+	statement_parse_test("x = 1 + y;", "x=(1+y);");
+	statement_parse_test("x += 1 + y;", "x+=(1+y);");
+	statement_parse_test("x -= 1 + y;", "x-=(1+y);");
+	statement_parse_test("x *= 1 + y;", "x*=(1+y);");
+	statement_parse_test("x /= 1 + y;", "x/=(1+y);");
+	statement_parse_test("x %= 1 + y;", "x%=(1+y);");
+	statement_parse_test("x &= 1 + y;", "x&=(1+y);");
+	statement_parse_test("x |= 1 + y;", "x|=(1+y);");
+	statement_parse_test("x ^= 1 + y;", "x^=(1+y);");
+}
+
+#[test]
+fn statement_if() {
+	statement_parse_test("if (true){ }", "if(true){}");
+	statement_parse_test("if (a){ } else { }", "if(a){}else{}");
+	statement_parse_test("if (x > y){
+		foo(x + 1);
+	 } else { 
+		bar(y * 4);
+	 }", "if((x>y)){foo((x+1));}else{bar((y*4));}");
+}
+
+#[test]
+fn statement_return() {
+	statement_parse_test("return;", "return;");
+	statement_parse_test("return x * y;", "return (x*y);");
+}
+
+#[test]
+fn statement_break() {
+	statement_parse_test("break;", "break;");
+}
+
+#[test]
+fn statement_continue() {
+	statement_parse_test("continue;", "continue;");
+}
+
+
+//
+// Definition Tests
+//
+
+#[test]
+fn definition_function() {
+
+}
+
+#[test]
+fn definition_variant() {
+	definition_parse_test("variant foo;", "variant foo;");
+	definition_parse_test("variant bar { 1 , -2 } ;", "variant bar{1,-2};");
+	definition_parse_test("variant baz { 1 , -2, 0x3, 0X4 } ;", "variant baz{1,-2,3,4};");
 }

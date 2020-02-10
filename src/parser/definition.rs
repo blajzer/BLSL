@@ -20,27 +20,27 @@ use nom::{
 use nom_locate::position;
 
 fn parse_function_parameter(input: Span) -> IResult<Span, FunctionParam> {
-	let (i, pos) = preceded(multispace0, position)(input)?;
-	let (i, type_decl) = preceded(multispace0, parse_type_decl)(i)?;
-	let (i, name) = preceded(multispace0, parse_identifier)(i)?;
+	let (i, pos) = preceded(whitespace0, position)(input)?;
+	let (i, type_decl) = preceded(whitespace0, parse_type_decl)(i)?;
+	let (i, name) = preceded(whitespace0, parse_identifier)(i)?;
 
 	Ok((i, FunctionParam {pos: pos, name: name, type_name: type_decl}))
 }
 
 fn parse_function_definition(input: Span) -> IResult<Span, Definition> {
-	let (i, pos) = preceded(multispace0, position)(input)?;
+	let (i, pos) = preceded(whitespace0, position)(input)?;
 	let (i, _) = tag("func")(i)?;
-	let (i, name) = preceded(multispace0, cut(parse_identifier))(i)?;
-	let (i, params) = preceded(multispace0, delimited(
+	let (i, name) = preceded(whitespace0, cut(parse_identifier))(i)?;
+	let (i, params) = preceded(whitespace0, delimited(
 		tag("("), 
-		separated_list(preceded(multispace0, tag(",")), parse_function_parameter),
-		preceded(multispace0, cut(tag(")")))))(i)?;
+		separated_list(preceded(whitespace0, tag(",")), parse_function_parameter),
+		preceded(whitespace0, cut(tag(")")))))(i)?;
 	let (i, maybe_return) = opt(|input: Span| {
-		let (i, _) = preceded(multispace0, tag("->"))(input)?;
+		let (i, _) = preceded(whitespace0, tag("->"))(input)?;
 		let (i, return_type) = cut(parse_type_decl)(i)?;
 		Ok((i, return_type))
 	})(i)?;
-	let (i, body) = preceded(multispace0, parse_statement)(i)?;
+	let (i, body) = preceded(whitespace0, parse_statement)(i)?;
 
 	Ok((i, Definition::Function {
 		pos: pos, 
@@ -52,13 +52,13 @@ fn parse_function_definition(input: Span) -> IResult<Span, Definition> {
 }
 
 fn parse_variant_definition(input: Span) -> IResult<Span, Definition> {
-	let (i, pos) = preceded(multispace0, position)(input)?;
+	let (i, pos) = preceded(whitespace0, position)(input)?;
 	let (i, _) = tag("variant")(i)?;
-	let (i, name) = preceded(multispace1, parse_identifier)(i)?;
+	let (i, name) = preceded(whitespace1, parse_identifier)(i)?;
 	let (i, maybe_values) = opt(delimited(
-		preceded(multispace0, tag("{")),
-		separated_list(preceded(multispace0, tag(",")), parse_integer),
-		preceded(multispace0, tag("}")),
+		preceded(whitespace0, tag("{")),
+		separated_list(preceded(whitespace0, tag(",")), preceded(whitespace0, alt((parse_hex, parse_integer)))),
+		preceded(whitespace0, tag("}")),
 	))(i)?;
 	
 	let values = maybe_values.unwrap_or(vec!()).iter().map(|v| {
@@ -67,6 +67,8 @@ fn parse_variant_definition(input: Span) -> IResult<Span, Definition> {
 			SomeInt::U64(u) => *u as i64
 		}
 	}).collect();
+
+	let (i, _) = preceded(whitespace0, tag(";"))(i)?;
 
 	Ok((i, Definition::Variant {
 		pos: pos,

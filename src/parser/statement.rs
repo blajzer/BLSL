@@ -12,7 +12,7 @@ use nom::{
 	IResult,
 	branch::alt,
 	bytes::complete::tag,
-	character::complete::{char, multispace0},
+	character::complete::{char},
 	combinator::{cut, map, opt, value},
 	multi::many0,
 	sequence::{delimited, preceded}
@@ -21,26 +21,26 @@ use nom::{
 use nom_locate::position;
 
 fn parse_statement_expression(input: Span) -> IResult<Span, Statement> {
-	let (i, pos) = preceded(multispace0, position)(input)?;
+	let (i, pos) = preceded(whitespace0, position)(input)?;
 	let (i, expr) = parse_expression(i)?;
-	let (i, _) = preceded(multispace0, tag(";"))(i)?;
+	let (i, _) = preceded(whitespace0, tag(";"))(i)?;
 
 	Ok((i, Statement::Expr {pos: pos, expr: expr}))
 }
 
 fn parse_statement_block(input: Span) -> IResult<Span, Statement> {
-	let (i, _) = multispace0(input)?;
+	let (i, _) = whitespace0(input)?;
 	let (i, pos) = position(i)?;
-	let (i, body) = delimited(char('{'), many0(parse_statement), preceded(multispace0, cut(char('}'))))(i)?;
+	let (i, body) = delimited(char('{'), many0(parse_statement), preceded(whitespace0, cut(char('}'))))(i)?;
 
 	Ok((i, Statement::Block {pos: pos, body: body}))
 }
 
 fn parse_statement_assignment(input: Span) -> IResult<Span, Statement> {
-	let (i, pos) = preceded(multispace0, position)(input)?;
+	let (i, pos) = preceded(whitespace0, position)(input)?;
 	let (i, lhs) = parse_expression_member_access(i)?;
 
-	let (i, op) = preceded(multispace0, alt((
+	let (i, op) = preceded(whitespace0, alt((
 		value(AssignmentOperator::AssignAdd, tag("+=")),
 		value(AssignmentOperator::AssignSubtract, tag("-=")),
 		value(AssignmentOperator::AssignMultiply, tag("*=")),
@@ -52,24 +52,24 @@ fn parse_statement_assignment(input: Span) -> IResult<Span, Statement> {
 		value(AssignmentOperator::Assign, tag("="))
 	)))(i)?;
 
-	let (i, rhs) = preceded(multispace0, parse_expression)(i)?;
-	let (i, _) = preceded(multispace0, tag(";"))(i)?;
+	let (i, rhs) = preceded(whitespace0, parse_expression)(i)?;
+	let (i, _) = preceded(whitespace0, tag(";"))(i)?;
 
 	Ok((i, Statement::Assignment {pos: pos, lhs: lhs, rhs: rhs, op: op}))
 }
 
 fn parse_statement_variable_decl(input: Span) -> IResult<Span, Statement> {
-	let (i, pos) = preceded(multispace0, position)(input)?;
-	let (i, decl) = preceded(multispace0, parse_type_decl)(i)?;
-	let (i, name) = preceded(multispace1, parse_identifier)(i)?;
+	let (i, pos) = preceded(whitespace0, position)(input)?;
+	let (i, decl) = preceded(whitespace0, parse_type_decl)(i)?;
+	let (i, name) = preceded(whitespace1, parse_identifier)(i)?;
 
 	let (i, maybe_init) = opt(|input: Span| {
-		let (i, _) = preceded(multispace0, tag("="))(input)?;
+		let (i, _) = preceded(whitespace0, tag("="))(input)?;
 		let (i, expr) = parse_expression(i)?;
 		Ok((i, expr))
 	})(i)?;
 
-	let (i, _) = preceded(multispace0, tag(";"))(i)?;
+	let (i, _) = preceded(whitespace0, tag(";"))(i)?;
 
 	let decl = Statement::VariableDeclaration {
 		pos: pos,
@@ -82,15 +82,15 @@ fn parse_statement_variable_decl(input: Span) -> IResult<Span, Statement> {
 }
 
 fn parse_statement_if(input: Span) -> IResult<Span, Statement> {
-	let (i, pos) = preceded(multispace0, position)(input)?;
+	let (i, pos) = preceded(whitespace0, position)(input)?;
 	let (i, _) = tag("if")(i)?;
 
-	let (i, cond) = preceded(multispace0, delimited(char('('), parse_expression, preceded(multispace0, cut(char(')')))))(i)?;
-	let (i, if_body) = preceded(multispace0, parse_statement)(i)?;
+	let (i, cond) = preceded(whitespace0, delimited(char('('), parse_expression, preceded(whitespace0, cut(char(')')))))(i)?;
+	let (i, if_body) = preceded(whitespace0, parse_statement)(i)?;
 
 	let (i, else_body) = opt(|input: Span| {
-		let (i, _) = preceded(multispace0, tag("else"))(input)?;
-		let (i, else_body) = preceded(multispace0, parse_statement)(i)?;
+		let (i, _) = preceded(whitespace0, tag("else"))(input)?;
+		let (i, else_body) = preceded(whitespace0, parse_statement)(i)?;
 		Ok((i, Box::new(else_body)))
 	})(i)?;
 
@@ -98,28 +98,28 @@ fn parse_statement_if(input: Span) -> IResult<Span, Statement> {
 }
 
 fn parse_statement_return(input: Span) -> IResult<Span, Statement> {
-	let (i, pos) = preceded(multispace0, position)(input)?;
-	let (i, _) = preceded(multispace0, tag("return"))(i)?;
+	let (i, pos) = preceded(whitespace0, position)(input)?;
+	let (i, _) = preceded(whitespace0, tag("return"))(i)?;
 
-	let (i, maybe_expr) = opt(preceded(multispace1, parse_expression))(i)?;
+	let (i, maybe_expr) = opt(preceded(whitespace1, parse_expression))(i)?;
 
-	let (i, _) = preceded(multispace0, tag(";"))(i)?;
+	let (i, _) = preceded(whitespace0, tag(";"))(i)?;
 
 	Ok((i, Statement::Return {pos: pos, expr: maybe_expr}))
 }
 
 fn parse_statement_break(input: Span) -> IResult<Span, Statement> {
-	let (i, pos) = preceded(multispace0, position)(input)?;
-	let (i, _) = preceded(multispace0, tag("break"))(i)?;
-	let (i, _) = preceded(multispace0, tag(";"))(i)?;
+	let (i, pos) = preceded(whitespace0, position)(input)?;
+	let (i, _) = preceded(whitespace0, tag("break"))(i)?;
+	let (i, _) = preceded(whitespace0, tag(";"))(i)?;
 
 	Ok((i, Statement::Break {pos: pos}))
 }
 
 fn parse_statement_continue(input: Span) -> IResult<Span, Statement> {
-	let (i, pos) = preceded(multispace0, position)(input)?;
-	let (i, _) = preceded(multispace0, tag("continue"))(i)?;
-	let (i, _) = preceded(multispace0, tag(";"))(i)?;
+	let (i, pos) = preceded(whitespace0, position)(input)?;
+	let (i, _) = preceded(whitespace0, tag("continue"))(i)?;
+	let (i, _) = preceded(whitespace0, tag(";"))(i)?;
 
 	Ok((i, Statement::Continue {pos: pos}))
 }

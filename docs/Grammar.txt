@@ -45,4 +45,4 @@ statementForLoop := 'for' identifier '=' expr '..' expr [',' expr] statement // 
 functionParameter := typeDecl identifier
 definitionFunction := 'func' identifier '(' functionParameter* ')' ['->' typeDecl] statementBlock
 definitionVariant := 'variant' identifier ['{' (integer | hexInt) (','( integer | hexInt))* '}']  ';'
-definitionTypeAlias := 'type' identifier = typeDecl // TODO: just an identifier?
+definitionTypeAlias := 'type_alias' identifier = typeDecl // TODO: just an identifier?

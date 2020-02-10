@@ -40,23 +40,23 @@ Bitwise Or | ✅ | ✅ | ✅ | ❔
 And | ✅ | ✅ | ✅ | ❔
 Or | ✅ | ✅ | ✅ | ❔
 Ternary | ✅ | ✅ | ✅ | ❔
-Expression Statement | ✅ | ✅ | ❌ | ❔
-Block Statement | ✅ | ✅ | ❌ | ❔
+Expression Statement | ✅ | ✅ | ✅ | ❔
+Block Statement | ✅ | ✅ | ✅ | ❔
 For Loop | ❌ | 🚧 | ❌ | ❔
 While Loop | ❌ | 🚧 | ❌ | ❔
-Add Assign | ✅ | ✅ | ❌ | ❔
-Subtract Assign | ✅ | ✅ | ❌ | ❔
-Multiply Assign | ✅ | ✅ | ❌ | ❔
-Divide Assign | ✅ | ✅ | ❌ | ❔
-Modulus Assign | ✅ | ✅ | ❌ | ❔
-Bitwise And Assign | ✅ | ✅ | ❌ | ❔
-Bitwise Or Assign | ✅ | ✅ | ❌ | ❔
-Bitwise Xor Assign | ✅ | ✅ | ❌ | ❔
-Assign | ✅ | ✅ | ❌ | ❔
+Add Assign | ✅ | ✅ | ✅ | ❔
+Subtract Assign | ✅ | ✅ | ✅ | ❔
+Multiply Assign | ✅ | ✅ | ✅ | ❔
+Divide Assign | ✅ | ✅ | ✅ | ❔
+Modulus Assign | ✅ | ✅ | ✅ | ❔
+Bitwise And Assign | ✅ | ✅ | ✅ | ❔
+Bitwise Or Assign | ✅ | ✅ | ✅ | ❔
+Bitwise Xor Assign | ✅ | ✅ | ✅ | ❔
+Assign | ✅ | ✅ | ✅ | ❔
 Variable Declaration | ✅ | 🚧 | ❌ | ❔
-If | ✅ | ✅ | ❌ | ❔
-Return | ✅ | ✅ | ❌ | ❔
-Break | ✅ | ✅ | ❌ | ❔
-Continue | ✅ | ✅ | ❌ | ❔
+If | ✅ | ✅ | ✅ | ❔
+Return | ✅ | ✅ | ✅ | ❔
+Break | ✅ | ✅ | ✅ | ❔
+Continue | ✅ | ✅ | ✅ | ❔
 Function Definition | ✅ | ❌ | ❌ | ❔
-Variant Definition | ✅ | ❌ | ❌ | ❔
+Variant Definition | ✅ | ❌ | ✅ | ❔

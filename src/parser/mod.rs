@@ -64,6 +64,25 @@ fn whitespace0(input: Span) -> IResult<Span, ()> {
 	}
 }
 
+fn whitespace1(input: Span) -> IResult<Span, ()> {
+	let mut old_i = input;
+	let mut consumed_whitespace = false;
+	loop {
+		let (i, _) = multispace0(old_i)?;
+		consumed_whitespace = consumed_whitespace || i != old_i;
+		let (i, _) = consume_comment(i)?;
+		if i == old_i {
+			if consumed_whitespace {
+				return Ok((i, ()));
+			} else {
+				return Err(nom::Err::Error(nom::error::make_error(i, nom::error::ErrorKind::Space)));
+			}
+		} else {
+			old_i = i;
+		}
+	}
+}
+
 enum SomeInt {
 	U64(u64),
 	I64(i64)
@@ -104,10 +123,12 @@ fn parse_double(input: Span) -> IResult<Span, f64> {
 }
 
 fn parse_integer(input: Span) -> IResult<Span, SomeInt> {
-	let (i, digits) = digit1(input)?;
+	let (i, negative) = opt(tag("-"))(input)?;
+	let (i, digits) = preceded(whitespace0, digit1)(i)?;
 
 	if let Ok(num) = digits.fragment.parse::<i64>() {
-		Ok((i, SomeInt::I64(num)))
+		let sign = if negative.is_some() { -1 } else { 1 };
+		Ok((i, SomeInt::I64(num * sign)))
 	} else if let Ok(num) = digits.fragment.parse::<u64>() {
 		Ok((i, SomeInt::U64(num)))
 	} else {
@@ -115,12 +136,12 @@ fn parse_integer(input: Span) -> IResult<Span, SomeInt> {
 	}
 }
 
-fn parse_hex(input: Span) -> IResult<Span, u64> {
+fn parse_hex(input: Span) -> IResult<Span, SomeInt> {
 	let (i, _) = alt((tag("0x"), tag("0X")))(input)?;
 	let (i, digits) = cut(hex_digit1)(i)?;
 
 	if let Ok(num) = u64::from_str_radix(digits.fragment, 16) {
-		Ok((i, num))
+		Ok((i, SomeInt::U64(num)))
 	} else {
 		Err(Error(ParseError::from_error_kind(i, ErrorKind::HexDigit)))
 	}
@@ -130,8 +151,8 @@ fn parse_type_decl(input: Span) -> IResult<Span, TypeDecl> {
 	let (i, _) = multispace0(input)?;
 	let (i, pos) = position(i)?;
 	
-	let (i, maybe_const) = opt(terminated(tag("const"), multispace1))(i)?;
-	let (i, maybe_ref) = opt(terminated(tag("ref"), multispace1))(i)?;
+	let (i, maybe_const) = opt(terminated(tag("const"), whitespace1))(i)?;
+	let (i, maybe_ref) = opt(terminated(tag("ref"), whitespace1))(i)?;
 
 	let (i, name) = parse_identifier(i)?;
 
@@ -230,3 +251,105 @@ pub fn expression_to_string(e: &Expr) -> String {
 	output
 }
 
+pub fn statement_to_string(s: &Statement) -> String {
+	let mut output = String::new();
+
+	match s {
+		Statement::Block {body, ..} => {
+			output.push('{');
+			for s in body.iter() {
+				output.push_str(statement_to_string(s).as_str());
+			}
+			output.push('}');
+		},
+		Statement::Expr {expr, ..} => {
+			output.push_str(expression_to_string(expr).as_str());
+			output.push(';');
+		},
+		Statement::Assignment {lhs, rhs, op, ..} => {
+			output.push_str(expression_to_string(lhs).as_str());
+			output.push_str(match op {
+				AssignmentOperator::Assign => "=",
+				AssignmentOperator::AssignAdd => "+=",
+				AssignmentOperator::AssignSubtract => "-=",
+				AssignmentOperator::AssignMultiply => "*=",
+				AssignmentOperator::AssignDivide => "/=",
+				AssignmentOperator::AssignModulus => "%=",
+				AssignmentOperator::AssignBitAnd => "&=",
+				AssignmentOperator::AssignBitOr => "|=",
+				AssignmentOperator::AssignBitXor => "^="
+			});
+			output.push_str(expression_to_string(rhs).as_str());
+			output.push(';');
+		},
+		Statement::If {cond, if_body, else_body, ..} => {
+			output.push_str("if(");
+			output.push_str(expression_to_string(cond).as_str());
+			output.push(')');
+			output.push_str(statement_to_string(if_body).as_str());
+			if let Some(else_body) = else_body {
+				output.push_str("else");
+				output.push_str(statement_to_string(else_body).as_str());
+			}
+		},
+		Statement::VariableDeclaration {..} => {},/*{
+			pos: Span<'a>,
+			name: String,
+			var_type: TypeDecl<'a>,
+			initialization: Option<Expr<'a>>
+		},*/
+		Statement::ForLoop {..} => {},/*{
+			pos: Span<'a>,
+			initialization: Box<Statement<'a>>,
+			cond: Expr<'a>,
+			update: Box<Statement<'a>>,
+			body: Box<Statement<'a>>
+		},*/
+		Statement::WhileLoop {cond, body, ..} => {
+			output.push_str("while(");
+			output.push_str(expression_to_string(cond).as_str());
+			output.push(')');
+			output.push_str(statement_to_string(body).as_str());
+		},
+		Statement::Return {expr, ..} => {
+			output.push_str("return");
+			if let Some(expr) = expr {
+				output.push(' ');
+				output.push_str(expression_to_string(expr).as_str());
+				
+			}
+			output.push(';');
+		},
+		Statement::Break {..} => output.push_str("break;"),
+		Statement::Continue {..} => output.push_str("continue;")
+	}
+
+	output
+}
+
+pub fn definition_to_string(d: &Definition) -> String {
+	let mut output = String::new();
+
+	match d {
+		Definition::Function {name, params, ret, body, ..} => {
+
+		},
+		Definition::Variant {name, values, ..} => {
+			output.push_str("variant ");
+			output.push_str(name.as_str());
+			if values.len() > 0 {
+				output.push('{');
+				for (i, v) in values.iter().enumerate() {
+					output.push_str(v.to_string().as_str());
+					if i < values.len() - 1 {
+						output.push(',');
+					}
+				}
+				output.push('}');
+			}
+			output.push(';');
+		}
+	};
+
+	output
+}
